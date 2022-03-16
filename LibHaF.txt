@@ -1,10 +1,11 @@
 ## Title: LibHaF
 ## Description: .
 ## Author: IsJustGhost
-## APIVersion: 100034
+## APIVersion: 101033 101034
 ## Version: 0.1
 ## AddOnVersion: 000001
 ## IsLibrary: true
+## DependsOn: LibDebugLogger>=180
 
 
 # The creation and use of Add-ons are subject to the Add-on Terms of Use,
