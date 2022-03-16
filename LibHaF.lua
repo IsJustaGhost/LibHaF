@@ -1,5 +1,27 @@
 -- Lib Hooks and Functions
 
+--[[ TODO:
+	Create a Constants section.
+
+]]
+
+--[[ About lib:
+	Requirements of modified functions:
+		the modified function must not change how it is used in the base game.
+		the modified function must not cause conflicts with existing addons.
+	
+	Custom functions:
+		use JO_ as prefix. Mainly for humor.
+
+	Currently contains:
+		HookManager
+			adds the ability to "register" and "unregister" PreHooks and PostHooks. Allows all hooks to run.
+		ZO_FilteredNumericallyIndexedTableIterator
+			this version will iterate any number index, including decimals and below 1. (example[-∞] to example[∞])
+		RETICLE:GetInteractPromptVisible() and FISHING_MANAGER:StartInteraction()
+			used to disable interactions with RETICLE.interactionBlocked == true, unless target is 'Fish'.
+]]
+
 local LIB_IDENTIFIER, LIB_VERSION = "LibHaF", 01
 
 if _G[LIB_IDENTIFIER] and _G[LIB_IDENTIFIER].version > LIB_VERSION then
@@ -11,21 +33,34 @@ lib.name = LIB_IDENTIFIER
 lib.version = LIB_VERSION
 _G[LIB_IDENTIFIER] = lib
 
---[[
-	ftSt = formatString -- '%s'
-	
-logger:SetEnabled(true)
-/script libGlobals:debugFrmt('string 1 = %s, string 2 = %s, bool = %s', 'foo', 'bar', true)
-/script libGlobals:Debug('string 1 = %s, string 2 = %s, bool = %s', 'foo', 'bar', true)
-/script libGlobals:Debug('TEST')
-/script libGlobals:Info('TEST')
-/script libGlobals.logger:SetEnabled(true)
-/script libGlobals.logger:SetLogTracesOverride(true)
-/script libGlobals.logger:SetMinLevelOverride(LibDebugLogger.LOG_LEVEL_DEBUG)
-	dbug('string 1 = %s, string 2 = %s, bool = %s', 'foo', 'bar', true)
-	'string 1 = foo, string 2 = bar, bool = true'
-	
-	dbug('', )
+---------------------------------------------------------------------------------------------------------------
+-- Debug
+---------------------------------------------------------------------------------------------------------------
+--[[ About debug:
+	Debug input auto-formats numbers, strings, bools, userdata.
+		usedata is returned as userdata:GetName() or "userdata"
+		example:
+			local fooBar = true
+			lib:Info('foo %s, %s, control = %s', 'bar', fooBar, ZO_ProvisionerTopLevel)
+			will format as string.format('foo %s, %s, control = %s', 'bar', tostring(fooBar), ZO_ProvisionerTopLevel:GetName() or 'userdata')
+			will outut as 'foo bar, true, control = ZO_ProvisionerTopLevel'
+
+	Tables can also be formated by using fmt(tbl) as input. It will auto-append ' [table] {%s}' to the format string.
+		example:
+			local tbl = {'foo'. 'bar'}
+			lib:Info('foo %s', 'bar', fmt(tbl))
+			will format as string.format('foo %s [table] = {%s}', 'bar', '1 = foo, 2 = bar')
+			will output as 'foo bar [table] = {1 = foo, 2 = bar}'
+
+	Adding new objects
+		local newObject = {}
+		createLogger('newObject', newObject)
+
+		It will create a subLogger for the new object
+		newObject:Verbose()
+		newObject:Debug()
+		newObject:Warn()
+		newObject:Error()
 ]]
 
 local debugOverride = true
@@ -54,7 +89,7 @@ local function fmt(formatString, ...)
 --	if not lib.enableDebug then return end
     
     if g_append then
-        formatString = formatString .. ' [table] %s'
+        formatString = formatString .. ' [table] {%s}'
     end
 	
 	if type(formatString) == 'table' then
@@ -65,7 +100,9 @@ local function fmt(formatString, ...)
 			fmtStr = fmtStr .. k .. ' = %s, '
 			table.insert(tbl, v)
 		end
-		return stfmt(fmtStr, unpack(tbl))
+		if #tbl > 0 then
+			return stfmt(fmtStr, unpack(tbl))
+		end
     elseif type(formatString) == 'number' then
 		formatString = tostring(formatString)
     else
@@ -73,6 +110,12 @@ local function fmt(formatString, ...)
 	end
 	
     return (stfmt(formatString, ...))
+end
+
+local function tryUnpack(tble)
+	if #tble > 0 then
+		return unpack(tble)
+	end
 end
 
 local logFunctions = {}
@@ -102,79 +145,77 @@ local function createLogger(name, moduleTable)
 	end
 end
 
-
---lib.debugFrmt = dbug
 ---------------------------------------------------------------------------------------------------------------
 -- HookManager adds the ability to "register" and "unregister" PreHooks and PostHooks
 ---------------------------------------------------------------------------------------------------------------
 --[[
-	
-	The hookId is used to identify the hook in the debug
-		hookId = objectTable[existingFunctionName] as string 'FISHING_MANAGER[StartInteraction]'
-	
+	The hookId is used to identify the hook as a string. Mainly used for debug.
+		hookId = objectTable[existingFunctionName] as string 'FISHING_MANAGER["StartInteraction"]'
 	
 	All original functions, posthooks, prehooks, hookIds are appended to the objectTable to be used later.
 	
 	objectTable[existingFunctionName .. '_Original'] = originalFunciton
-	objectTable[existingFunctionName .. '_PrehookFunctions'] = {[name_given_at_register] = hookFunciton}
-	objectTable[existingFunctionName .. '_PosthookFunctions'] = {[name_given_at_register] = hookFunciton}
-	
-	FISHING_MANAGER.StartInteraction_Original = originalFunciton
-	FISHING_MANAGER.StartInteraction_PrehookFunctions = {[name_given_at_register] = hookFunciton}
-	FISHING_MANAGER.StartInteraction_PosthookFunctions = {[name_given_at_register] = hookFunciton}
-	
-	FISHING_MANAGER.registeredHooks = {[StartInteraction] = 'FISHING_MANAGER[StartInteraction]'}
-	
-	
-	RETICLE.OnUpdate_Original = originalFunciton
-	RETICLE.OnUpdate_PrehookFunctions = {[name_given_at_register] = hookFunciton}
-	RETICLE.OnUpdate_PosthookFunctions = {[name_given_at_register] = hookFunciton}
-	
-	RETICLE.TryHandlingInteraction_Original = originalFunciton
-	RETICLE.TryHandlingInteraction_PrehookFunctions = {[name_given_at_register] = hookFunciton}
-	RETICLE.TryHandlingInteraction_PosthookFunctions = {[name_given_at_register] = hookFunciton}
-	RETICLE.TryHandlingInteraction = modifiedHookFunction
-	
-	
-	RETICLE.registeredHooks = {
-		[OnUpdate] = 'RETICLE[OnUpdate]',
-		[TryHandlingInteraction] = 'FISHING_MANAGER[TryHandlingInteraction]',
-	}
-	
-	hookIds are appended as objectTable[registeredHooks] {[existingFunctionName] = hookId}
-]]
+	objectTable[existingFunctionName .. '_PrehookFunctions'] = {["name_given_at_register"] = hookFunciton}
+	objectTable[existingFunctionName .. '_PosthookFunctions'] = {["name_given_at_register"] = hookFunciton}
 
+	hookIds are appended as objectTable["registeredHooks"] {[existingFunctionName] = hookId}
+	
+	examples:
+		RETICLE.OnUpdate_Original = originalFunciton
+		RETICLE.OnUpdate_PrehookFunctions = {["name_given_at_register"] = hookFunciton}
+		RETICLE.OnUpdate_PosthookFunctions = {["name_given_at_register"] = hookFunciton}
+		RETICLE.OnUpdate = modifiedHookFunction
+		
+		RETICLE.TryHandlingInteraction_Original = originalFunciton
+		RETICLE.TryHandlingInteraction_PrehookFunctions = {["name_given_at_register"] = hookFunciton}
+		RETICLE.TryHandlingInteraction_PosthookFunctions = {["name_given_at_register"] = hookFunciton}
+		RETICLE.TryHandlingInteraction = modifiedHookFunction
+		
+		RETICLE.registeredHooks = {
+			[OnUpdate] = 'RETICLE["OnUpdate"]',
+			[TryHandlingInteraction] = 'RETICLE["TryHandlingInteraction"]',
+		}
+	
+	For functions that are nested the hookId will be '_Not_Found_[existingFunctionName]'
+	There would need to be a traceback to figure out the full 'path' of the objectTable and I am not sure how to do this.
+	Take 'SMITHING_GAMEPAD.deconstructionPanel.inventory' as an example.
+
+	If a registered prehook returns true, then true is the only aregument returned,
+	otherwise it wil return full arguments from originalFn.
+]]
 
 local HookManager = {}
 createLogger('HookManager', HookManager)
 
-local registerdHooks = {}
 local function getObjectName(object)
-	local objectId = tostring(object)
-	if type(object) ~= 'table' then return '_Not_A_Object_' end
-	if objectId == tostring(_G) then
+	local tableId = tostring(object)
+	if type(object) ~= 'table' then return false end -- '_Not_A_Object_'
+	if tableId == tostring(_G) then
 		return '_G'
 	end
 	
 	for key, value in zo_insecurePairs(_G) do
 	    if type(value) == 'table' then
-    		if tostring(value) == objectId then
+    		if tostring(value) == tableId then
     			return key
     		end
 		end
 	end
+
 	return '_Not_Found_'
 end
 
 local function getOrCreateHookId(objectTable, existingFunctionName)
-	local registeredHooks = objectTable['registeredHooks'] or {}
+	local registeredHooks = objectTable.registeredHooks or {}
 
 	local hookId = registeredHooks[existingFunctionName]
 	if hookId == nil then
-		hookId = string.format('%s[%s]', getObjectName(objectTable), existingFunctionName)
+		local objectName = getObjectName(objectTable)
+		if not objectName then return false end
+		hookId = string.format('%s["%s"]', objectName, existingFunctionName)
 		
 		registeredHooks[existingFunctionName] = hookId
-		objectTable['registeredHooks'] = registeredHooks
+		objectTable.registeredHooks = registeredHooks
 	end
 	
 	return hookId
@@ -192,29 +233,55 @@ local function updateParameters(objectTable, existingFunctionName, hookFunction)
 end
 
 local function getHookTablesAndId(objectTable, existingFunctionName)
-	return objectTable[existingFunctionName .. '_Original'], objectTable[existingFunctionName .. '_PrehookFunctions' ], objectTable[existingFunctionName .. '_PosthookFunctions' ], objectTable['registeredHooks'][existingFunctionName]
+	return objectTable[existingFunctionName .. '_Original'], objectTable[existingFunctionName .. '_PrehookFunctions' ], objectTable[existingFunctionName .. '_PosthookFunctions' ], objectTable.registeredHooks[existingFunctionName]
 end
 
-local function resetToOriginal(originalFn, objectTable, existingFunctionName)
-	HookManager:Info('local function resetToOriginal: reset %s', objectTable['registeredHooks'][existingFunctionName])
+local function updateRegisteredHooks()
+	local registeredHooks = {}
 
-	objectTable[existingFunctionName] = originalFn
+	for registeredName, hooks in pairs(HookManager.registeredHooks) do
+		if NonContiguousCount(hooks) ~= 0 then
+			registeredHooks[registeredName] = hooks
+		end
+	end
+
+	HookManager.registeredHooks = registeredHooks
+end
+
+local function addRegisteredHook(registeredName, hookId)
+	local registeredHooks = HookManager.registeredHooks[registeredName] or {}
+	if not HookManager.registeredHooks[registeredName] then HookManager.registeredHooks[registeredName] = {} end
+	registeredHooks[hookId] = true
+	HookManager.registeredHooks[registeredName] = registeredHooks
+end
+
+local function removeRegisteredHook(registeredName, hookId)
+	if HookManager.registeredHooks[registeredName] then 
+		HookManager.registeredHooks[registeredName][hookId] = nil
+	end
+end
+
+local function resetToOriginal(objectTable, existingFunctionName)
+	HookManager:Info('local function resetToOriginal: reset %s', objectTable.registeredHooks[existingFunctionName]) -- hookId
+
 	objectTable[existingFunctionName .. '_Original'] = nil
-	objectTable['registeredHooks'][existingFunctionName] = nil
+	objectTable.registeredHooks[existingFunctionName] = nil
 	
-	if NonContiguousCount(objectTable['registeredHooks']) == 0 then
-		objectTable['registeredHooks'] = nil
+	if NonContiguousCount(objectTable.registeredHooks) == 0 then
+		objectTable.registeredHooks = nil
 	end
 end
 
 local function getHookPocessingFunctions(prehookFunctions, posthookFunctions)
-	local preHooks, posthooks
+	local dummyFn = function(...) return false end
+	local runPrehooks, runPosthooks = dummyFn, dummyFn
+
 	if prehookFunctions then
-		preHooks = function(...)
+		runPrehooks = function(...)
 			local bypass = false
-			for name, hookFunction in pairs(prehookFunctions) do
+			for registeredName, hookFunction in pairs(prehookFunctions) do
 				local returns = hookFunction(...)
-				HookManager:Debug('Run PreHooks: name = %s, Returns = %s', name, returns) 
+				HookManager:Debug('-- Run PreHook for: registeredName = %s, Returns = %s', registeredName, returns) 
 				if returns then
 					bypass = true
 				end
@@ -223,32 +290,31 @@ local function getHookPocessingFunctions(prehookFunctions, posthookFunctions)
 			HookManager:Debug('Bypass Original = %s', bypass)
 			return bypass
 		end
-	else
-		preHooks = function(...) 
-			HookManager:Debug('No Prehooks, Bypass Original = %s', false)
-			return false
-		end
 	end
 	
 	if posthookFunctions then
-		posthooks = function(...)
-			for name, hookFunction in pairs(posthookFunctions) do
+		runPosthooks = function(...)
+			for registeredName, hookFunction in pairs(posthookFunctions) do
 				local returns = hookFunction(...)
-				HookManager:Debug('Run PostHooks: name = %s, Returns = %s', name, returns) 
+				HookManager:Debug('-- Run PostHook for: registeredName = %s, Returns = %s', registeredName, returns) 
 			end
 		end
-	else
-		posthooks = function(...) end
 	end
 	
-	return preHooks, posthooks
+	return runPrehooks, runPosthooks
 end
 
-local function getModifiedHookFunction(originalFn, prehookFunctions, posthookFunctions, hookId)
+local function getUpdatedFunction(objectTable, existingFunctionName)
+	local originalFn, prehookFunctions, posthookFunctions, hookId = getHookTablesAndId(objectTable, existingFunctionName)
+	HookManager:Info('local function getUpdatedFunction: for %s', hookId)
+	
+	if not prehookFunctions and not posthookFunctions then
+		resetToOriginal(objectTable, existingFunctionName)
+		return originalFn -- 'Original function has been restored.'
+	end
 
 	return function(...)
-	--	local hookId = objectTable['registeredHooks'][existingFunctionName]
-		HookManager:Debug('Run Hooks: %s', hookId) 
+		HookManager:Debug('Run Hooks: %s', hookId)
 		
 		local runPrehooks, runPosthooks = getHookPocessingFunctions(prehookFunctions, posthookFunctions)
 		
@@ -257,106 +323,116 @@ local function getModifiedHookFunction(originalFn, prehookFunctions, posthookFun
 			return true
 		else
 			local returns = {originalFn(...)}
-			HookManager:Debug('Run originalFn', fmt(returns))
+			HookManager:Debug('Run originalFn, Returns - %s', fmt(tryUnpack(returns)))
 			runPosthooks(...)
 			return unpack(returns)
 		end
 	end
 end
 
-local function updateHooks(objectTable, existingFunctionName)
-	HookManager:Info('local function updateHooks:')
+local function updateHookedFunction(objectTable, existingFunctionName)
+	HookManager:Info('local function updateHookedFunction:')
 	if not objectTable[existingFunctionName .. '_Original'] then
+		-- Store the origainl function for later use.
 		objectTable[existingFunctionName .. '_Original'] = objectTable[existingFunctionName]
 	end
 	
-	local originalFn, prehookFunctions, posthookFunctions, hookId = getHookTablesAndId(objectTable, existingFunctionName)
-	HookManager:Info('updateHooks: %s', hookId)
-	
-	if not prehookFunctions and not posthookFunctions then
-		HookManager:Info('updateHooks: %s', hookId)
-		resetToOriginal(originalFn, objectTable, existingFunctionName)
-		return
-	end
-
-	objectTable[existingFunctionName] = getModifiedHookFunction(originalFn, prehookFunctions, posthookFunctions, hookId)
-	HookManager:Info('Update complete.')
+	objectTable[existingFunctionName] = getUpdatedFunction(objectTable, existingFunctionName)
 end
 
-local function registerHooks(name, objectTable, existingFunctionName, hookFunction, suffix, hookId)
-	HookManager:Info('local function registerHooks: name = %s', name)
+local function validateArguments(registeredName, objectTable, existingFunctionName, hookFunction, suffix, hookId)
+	-- concidering making an argument validator
+--[[
+	local errorString = validateArguments(registeredName, objectTable, existingFunctionName, hookFunction, suffix, hookId)
+	if errorString then
+		self:Info('RegisterForPreHook: errorString = %s', errorString)
+		return errorString
+	end
+]]
+end
+
+local function sharedRegister(hookType, registeredName, objectTable, existingFunctionName, hookFunction)
+	-- validate arguments?
+	HookManager:Info('local function sharedRegister: registeredName = %s', registeredName)
+	local objectTable, existingFunctionName, hookFunction, hookId = updateParameters(objectTable, existingFunctionName, hookFunction)
+
+	local suffix = '_' .. hookType .. 'hookFunctions'
+	self:Info('-- Begain RegisterFor%sHook: %s', hookType, hookId)
+	
 	local hookFunctions = objectTable[existingFunctionName .. suffix] or {}
 	
-	-- allow re-registering an already created hook without unregistering first
-	HookManager:Info('registerHooks: name = %s, Has existing = %s', name, hookFunctions[name] ~= nil)
-	hookFunctions[name] = hookFunction
+	HookManager:Info('Has existing %shook for %s = %s', hookType, registeredName, hookFunctions[registeredName] ~= nil)
+	-- allow replacing an already created hook without unregistering first?
+	hookFunctions[registeredName] = hookFunction
+	addRegisteredHook(registeredName, hookId)
 	
-	HookManager:Debug('%s%s = ', hookId:gsub(']$', '' ), suffix, fmt(hookFunctions))
+	HookManager:Debug('%s%s =', hookId:gsub(']$', '' ), suffix, fmt(hookFunctions))
 	objectTable[existingFunctionName .. suffix] = hookFunctions
 	
-	updateHooks(objectTable, existingFunctionName)
+	updateHookedFunction(objectTable, existingFunctionName)
+	HookManager:Info('-- Update complete.')
+	HookManager:Info('-- End RegisterFor%sHook: %s', hookType, hookId)
 end
 
-local function unregisterHooks(name, objectTable, existingFunctionName, suffix, hookId)
-	HookManager:Info('local function unregisterHooks: name = %s', name)
+local function sharedUnregister(hookType, registeredName, objectTable, existingFunctionName)
+	-- validate arguments?
+	HookManager:Info('local function sharedUnregister: registeredName = %s', registeredName)
+	local objectTable, existingFunctionName, hookFunction, hookId = updateParameters(objectTable, existingFunctionName)
+
+	local suffix = '_' .. hookType .. 'hookFunctions'
+	self:Info('-- Begain UnregisterFor%sHook: %s', hookType, hookId)
+	
 	local hookFunctions = objectTable[existingFunctionName .. suffix]
 	
 	if hookFunctions then
-		HookManager:Debug('Start unregistering: %s, %s, #hooks = %s', hookId, suffix, NonContiguousCount(hookFunctions))
-		if hookFunctions[name] then
-			hookFunctions[name] = nil
+		HookManager:Debug('-- Current no. of hooks = %s', hookId, suffix, NonContiguousCount(hookFunctions))
+		if hookFunctions[registeredName] then
+			hookFunctions[registeredName] = nil
 			
 			if NonContiguousCount(hookFunctions) == 0 then
 				hookFunctions = nil
 			end
 			objectTable[existingFunctionName .. suffix] = hookFunctions
-			
-			updateHooks(objectTable, existingFunctionName)
+			removeRegisteredHook(registeredName, hookId)
+
+			updateHookedFunction(objectTable, existingFunctionName)
+			HookManager:Info('-- Update complete.')
 		end
 	end
-	HookManager:Debug('End  unregistering: %s, %s, Has hooks = %s', hookId, suffix, (hookFunctions ~= nil))
+	HookManager:Info('-- End UnregisterFor%sHook: %s, Has remaning hooks = %s', hookType, hookId, (hookFunctions ~= nil))
 end
 
-function HookManager:RegisterForPreHook(name, objectTable, existingFunctionName, hookFunction)
-	if not name then return end
-	objectTable, existingFunctionName, hookFunction, hookId = updateParameters(objectTable, existingFunctionName, hookFunction)
-	
-	HookManager:Info('RegisterForPreHook: name = %s, %s', name, hookId)
-	registerHooks(name, objectTable, existingFunctionName, hookFunction, '_PrehookFunctions', hookId)
+do -- Pre-hooks
+	local hookType = 'Pre'
+	function HookManager:RegisterForPreHook(registeredName, objectTable, existingFunctionName, hookFunction)
+		return sharedRegister(hookType, registeredName, objectTable, existingFunctionName, hookFunction)
+	end
+
+	function HookManager:UnregisterForPreHook(registeredName, objectTable, existingFunctionName)
+		return sharedUnregister(hookType, registeredName, objectTable, existingFunctionName)
+	end
 end
 
-function HookManager:UnregisterForPreHook(name, objectTable, existingFunctionName)
-	if not name then return end
-	objectTable, existingFunctionName, hookFunction, hookId = updateParameters(objectTable, existingFunctionName, hookFunction)
-	
-	HookManager:Info('UnregisterForPreHook: name = %s, %s', name, hookId)
-	unregisterHooks(name, objectTable, existingFunctionName, '_PrehookFunctions', hookId)
+do -- Post-hooks
+	local hookType = 'Post'
+	function HookManager:RegisterForPostHook(registeredName, objectTable, existingFunctionName, hookFunction)
+		return sharedRegister(hookType, registeredName, objectTable, existingFunctionName, hookFunction)
+	end
+
+	function HookManager:UnregisterForPostHook(registeredName, objectTable, existingFunctionName)
+		return sharedUnregister(hookType, registeredName, objectTable, existingFunctionName)
+	end
 end
 
-function HookManager:RegisterForPostHook(name, objectTable, existingFunctionName, hookFunction)
-	if not name then return end
-	objectTable, existingFunctionName, hookFunction, hookId = updateParameters(objectTable, existingFunctionName, hookFunction)
-	
-	HookManager:Info('RegisterForPostHook: name = %s, %s', name, hookId)
-	registerHooks(name, objectTable, existingFunctionName, hookFunction, '_PosthookFunctions', hookId)
-end
-
-function HookManager:UnregisterForPostHook(name, objectTable, existingFunctionName)
-	if not name then return end
-	objectTable, existingFunctionName, hookFunction, hookId = updateParameters(objectTable, existingFunctionName, hookFunction)
-	
-	HookManager:Info('UnregisterForPostHook: name = %s, %s', name, hookId)
-	unregisterHooks(name, objectTable, existingFunctionName, '_PosthookFunctions', hookId)
+function HookManager:GetRegisteredHooks()
+	updateRegisteredHooks()
+	return self.registeredHooks
 end
 
 JO_HOOK_MANAGER = HookManager
 
 --[[
-add status returns for  un/registering
-/script HOOK_MANAGER:RegisterForPreHook('_HookTest2', 'ZO_CraftingUtils_GetMultipleItemsTextureFromSmithingDeconstructionType', function(self) end)
-
-/script d(tostring(SMITHING_GAMEPAD.refinementPanel.inventory.owner))
-/script d(tostring(SMITHING_GAMEPAD))
+add status returns for  un/registering?
 
 HOOK_MANAGER:RegisterForPreHook(addon.name .. '_HookTest', 'SomeFunction', function(self)
 	return doThis()
@@ -403,7 +479,8 @@ end
 do
     -- this version will iterate any number index, including decimals and below 1. (example[-∞] to example[∞])
 	-- including tables where indices are not consecutive. 1,2,4,7
-	-- if there are non numeric indexes in table, they will be skipped without preventing table iterations.
+	-- if there are non numeric indexes in table, they will be skipped without preventing table iterations. -- not currently true
+	-- removed the type check due to causing errors
 	local function getIndexList(t)
 		local indexList = {}
 		for k,v in pairs(t) do
@@ -457,38 +534,7 @@ do
 end
 
 --[[
-a modified version of ZO_FilteredNumericallyIndexedTableIterator that will iterate any numerically indexed table, including <1 and decimals.
-
-EVENT_MANAGER:RegisterForEvent('libGlobals', EVENT_PLAYER_ACTIVATED,function()
-		EVENT_MANAGER:UnregisterForEvent('libGlobals', EVENT_PLAYER_ACTIVATED)
-	
-    local function getIndexList(tbl)
-        local indexList = {}
-        for k,v in pairs(tbl) do
-			if type(k) == 'number' then
-         	   table.insert(indexList, k)
-			end
-        end
-        table.sort(indexList, function(a, b) return a < b end)
-        return indexList
-    end
-/script d(ZO_SkillTypeData:GetSkillLineDataByIndex(1))
-/script d(ZO_SkillTypeData:GetSkillLineDataByIndex(9))
-/script d(ZO_SkillTypeData.orderedSkillLines)
-
-
-function SKILLS_DATA_MANAGER:SkillTypeIterator(skillTypeFilterFunctions)
-    -- This only works because we use the skillTypeObjectPool like a numerically indexed table
-    return ZO_FilteredNumericallyIndexedTable(self.skillTypeObjectPool:GetActiveObjects(), skillTypeFilterFunctions)
-end
-
-function ZO_SkillTypeData:SkillLineIterator(skillLineFilterFunctions)
-    return ZO_FilteredNumericallyIndexedTable(self.orderedSkillLines, skillLineFilterFunctions)
-end
-
-
 /script testFilter = function(data) return (tonumber(data) >= 1) end
-/script d(testFilter('3'))
 
 /script for k, v in ZO_FilteredNumericallyIndexedTableIterator({[0.1] = '0.1', [2] = '2'}, {testFilter}) do d(k,v) end
 /script for k, v in ZO_FilteredNumericallyIndexedTableIterator({[0.1] = '0.1', [2] = '2'}) do d(k,v) end
@@ -498,33 +544,60 @@ end
 ]]
 
 
-local onPlayerActivatedLogger = {}
-createLogger('onPlayerActivated', onPlayerActivatedLogger)
+---------------------------------------------------------------------------------------------------------------
+-- ZO_Object Enhancments
+---------------------------------------------------------------------------------------------------------------
+-- Allows the un/registering of hooks via self:
+--[[ This was just a thought.
+function ZO_Object:RegisterForPreHook(...)
+	return HOOK_MANAGER:RegisterForPreHook(tostring(self), ...)
+end
+
+function ZO_Object:UnregisterForPreHook(...)
+	return HOOK_MANAGER:UnregisterForPreHook(tostring(self), ...)
+end
+
+function ZO_Object:RegisterForPostHook(...)
+	return HOOK_MANAGER:RegisterForPostHook(tostring(self), ...)
+end
+
+function ZO_Object:UnregisterForPostHook(...)
+	return HOOK_MANAGER:UnregisterForPostHook(tostring(self), ...)
+end
+]]
+
+---------------------------------------------------------------------------------------------------------------
+-- DeferredInitialization - functions that need to be set up after loading
+---------------------------------------------------------------------------------------------------------------
+--[[ About DeferredInitialization:
+	DeferredInitialization is used to initialize modifications of objects that are not created OnInitialize.
+]]
+
+local DeferredInitialization = {}
+createLogger('DeferredInitialization', DeferredInitialization)
 
 local fishingActions = {
-	[GetString(SI_GAMECAMERAACTIONTYPE16)] = true,
-	[GetString(SI_GAMECAMERAACTIONTYPE17)] = true,
+	[GetString(SI_GAMECAMERAACTIONTYPE16)] = true, -- "Fish"
+--	[GetString(SI_GAMECAMERAACTIONTYPE17)] = true, -- "Reel In"
 }
 
 local function notFishingAction()
-	local action, interactableName = GetGameCameraInteractableActionInfo()
+	local action = GetGameCameraInteractableActionInfo()
 	return not fishingActions[action]
 end
 
-local function onPlayerActivated()
-	EVENT_MANAGER:UnregisterForEvent(lib.name, EVENT_PLAYER_ACTIVATED)
-	
-	onPlayerActivatedLogger:Info('onPlayerActivated')
-	
+local function performDeferredInitialization()
+	-- Must insure these constants are updated after objects are created.
 	local lib_reticle = RETICLE
 	local lib_fishing_manager = FISHING_MANAGER
 	local lib_fishing_gamepad = FISHING_GAMEPAD
 	local lib_fishing_keyboard = FISHING_KEYBOARD
 
 	-- RETICLE:GetInteractPromptVisible and FISHING_MANAGER:StartInteraction are used to disable interactions.
-	-- set RETICLE.interactionBlocked == true to disable
+	-- set RETICLE.interactionBlocked = true to disable
 	function lib_reticle:GetInteractPromptVisible()
 		-- disables interaction in gamepad mode and allows jumping
+		-- the aftion must not be for fishing. interactionBlocked == true before bait is selected
 		if lib_reticle.interactionBlocked and notFishingAction() then
 			return false
 		end
@@ -532,7 +605,7 @@ local function onPlayerActivated()
 	end
 	
 	function lib_fishing_manager:StartInteraction()
-	--	dbug('FISHING_MANAGER: RETICLE.interactionBlocked = %s', lib_reticle.interactionBlocked)
+	--	DeferredInitialization:Debug('FISHING_MANAGER: RETICLE.interactionBlocked = %s', lib_reticle.interactionBlocked)
 		if lib_reticle.interactionBlocked and notFishingAction() then
 			-- disables interaction in keyboard mode
 			-- returning true here will prevent GameCameraInteractStart() form firing
@@ -546,7 +619,40 @@ local function onPlayerActivated()
 			return lib_fishing_keyboard:StartInteraction()
 		end
 	end
---	/script d(RETICLE.interactionBlocked)
+	--	/script d(RETICLE.interactionBlocked)
 end
 
+local function onPlayerActivated()
+	EVENT_MANAGER:UnregisterForEvent(lib.name, EVENT_PLAYER_ACTIVATED)
+	
+	DeferredInitialization:Info('onPlayerActivated')
+	performDeferredInitialization()
+end
 EVENT_MANAGER:RegisterForEvent(lib.name, EVENT_PLAYER_ACTIVATED, onPlayerActivated)
+
+--[[
+	binding handlers for interaction
+	- Keyboard 
+		<Down>if not FISHING_MANAGER:StartInteraction() then GameCameraInteractStart() end</Down>
+
+	- gamepad
+		<Down>
+			ZO_SetJumpOrInteractDownAction(ZO_JUMP_OR_INTERACT_DID_NOTHING)
+
+			local interactPromptVisible = RETICLE:GetInteractPromptVisible() --< setting this to false will prevent inteaction
+
+			local isInactiveClickableFixture = IsGameCameraClickableFixture() and not IsGameCameraClickableFixtureActive()
+			if not IsBlockActive() then  --don't allow Interactions or Jumps while blocking on Gamepad as it will trigger a roll anyway.
+				if interactPromptVisible and not isInactiveClickableFixture then
+					ZO_SetJumpOrInteractDownAction(ZO_JUMP_OR_INTERACT_DID_INTERACT)
+
+					if not FISHING_MANAGER:StartInteraction() then GameCameraInteractStart() end
+
+				else
+					ZO_SetJumpOrInteractDownAction(ZO_JUMP_OR_INTERACT_DID_JUMP)
+					JumpAscendStart()
+				end
+			end
+		</Down>
+]]
+
