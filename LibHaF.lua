@@ -112,11 +112,21 @@ local function fmt(formatString, ...)
     return (stfmt(formatString, ...))
 end
 
-local function tryUnpack(tble)
-	if #tble > 0 then
-		return unpack(tble)
-	end
-end
+local function unpack_unordered_recursive(tbl, key)
+	local new_key, value = next(tbl, key)
+	if new_key == nil then return end
+  
+	return new_key, value, unpack_unordered_recursive(tbl, new_key)
+  end
+  
+local function tryUnpack(tbl)
+	  if type(tbl) ~= 'table' then return 'Not a table' end
+	  
+	  local key, value = next(tbl)
+	  if key == nil then return end
+	  
+	  return key, value, unpack_unordered_recursive(tbl, key)
+  end
 
 local logFunctions = {}
 if LibDebugLogger then
