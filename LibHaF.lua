@@ -67,8 +67,25 @@ _G[LIB_IDENTIFIER] = lib
 local debugOverride = true
 local logLevel = debugOverride and LibDebugLogger.LOG_LEVEL_DEBUG or LibDebugLogger.LOG_LEVEL_INFO
 
+local function unpack_unordered_recursive(tbl, key)
+  local new_key, value = next(tbl, key)
+  if new_key == nil then return end
+
+  return new_key, value, unpack_unordered_recursive(tbl, new_key)
+end
+
+local function tryUnpack(tbl)
+    if type(tbl) ~= 'table' then return 'Not a table' end
+	
+    local key, value = next(tbl)
+    if key == nil then return end
+    
+    return key, value, unpack_unordered_recursive(tbl, key)
+end
+
 local g_append = false
 local function stfmt(ftSt, ...)
+--	if not ftSt then return end
     ftSt = ftSt:gsub(', $', '')
 	local g_strArgs = {}
 	for i = 1, select("#", ...) do
@@ -90,7 +107,7 @@ local function fmt(formatString, ...)
 --	if not lib.enableDebug then return end
     
     if g_append then
-        formatString = formatString .. ' [table] {%s}'
+        formatString = formatString .. '[table] {%s}'
     end
 	
 	if type(formatString) == 'table' then
@@ -104,6 +121,8 @@ local function fmt(formatString, ...)
 		if #tbl > 0 then
 			return stfmt(fmtStr, unpack(tbl))
 		end
+        g_append = false
+		return 'nil'
     elseif type(formatString) == 'number' then
 		formatString = tostring(formatString)
     else
@@ -111,22 +130,6 @@ local function fmt(formatString, ...)
 	end
 	
     return (stfmt(formatString, ...))
-end
-
-local function unpack_unordered_recursive(tbl, key)
-  local new_key, value = next(tbl, key)
-  if new_key == nil then return end
-
-  return new_key, value, unpack_unordered_recursive(tbl, new_key)
-end
-
-local function tryUnpack(tbl)
-    if type(tbl) ~= 'table' then return 'Not a table' end
-	
-    local key, value = next(tbl)
-    if key == nil then return end
-    
-    return key, value, unpack_unordered_recursive(tbl, key)
 end
 
 local logFunctions = {}
@@ -307,8 +310,8 @@ local function getHookPocessingFunctions(prehookFunctions, posthookFunctions)
 	if posthookFunctions then
 		runPosthooks = function(...)
 			for registeredName, hookFunction in pairs(posthookFunctions) do
-				local returns = hookFunction(...)
-				HookManager:Debug('-- Run PostHook for: registeredName = %s, Returns = %s', registeredName, returns) 
+				local returns = {hookFunction(...)}
+				HookManager:Debug('-- Run PostHook for: registeredName = %s, Returns = ', registeredName, fmt(returns)) 
 			end
 		end
 	end
@@ -335,7 +338,7 @@ local function getUpdatedFunction(objectTable, existingFunctionName)
 			return true
 		else
 			local returns = {originalFn(...)}
-			HookManager:Debug('Run originalFn, Returns - %s', fmt(tryUnpack(returns)))
+			HookManager:Debug('Run originalFn, Returns = ', fmt(returns))
 			runPosthooks(...)
 			return unpack(returns)
 		end
@@ -378,7 +381,7 @@ local function sharedRegister(hookType, registeredName, objectTable, existingFun
 	hookFunctions[registeredName] = hookFunction
 	addRegisteredHook(registeredName, hookId)
 	
-	HookManager:Debug('%s%s =', hookId:gsub(']$', '' ), suffix, fmt(hookFunctions))
+	HookManager:Debug('%s%s = ', hookId:gsub(']$', '' ), suffix, fmt(hookFunctions))
 	objectTable[existingFunctionName .. suffix] = hookFunctions
 	
 	updateHookedFunction(objectTable, existingFunctionName)
