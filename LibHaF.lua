@@ -16,6 +16,7 @@
 	Currently contains:
 		HookManager
 			adds the ability to "register" and "unregister" PreHooks and PostHooks. Allows all hooks to run.
+			Orginal function only runs if no prehook returns true.
 		ZO_FilteredNumericallyIndexedTableIterator
 			this version will iterate any number index, including decimals and below 1. (example[-∞] to example[∞])
 		RETICLE:GetInteractPromptVisible() and FISHING_MANAGER:StartInteraction()
@@ -64,7 +65,7 @@ _G[LIB_IDENTIFIER] = lib
 ]]
 
 local debugOverride = true
-local logLevel = debugOverride and LibDebugLogger.LOG_LEVEL_DEBUG or LibDebugLogger.LOG_LEVEL_INFO
+local logLevel
 
 local g_append = false
 local function stfmt(ftSt, ...)
@@ -130,6 +131,7 @@ local function tryUnpack(tbl)
 
 local logFunctions = {}
 if LibDebugLogger then
+	logLevel = debugOverride and LibDebugLogger.LOG_LEVEL_DEBUG or LibDebugLogger.LOG_LEVEL_INFO
 	lib.logger = LibDebugLogger(LIB_IDENTIFIER)
 	local logFunctionNames = {"Verbose", "Debug", "Info", "Warn", "Error"}
 	for _, logFunctionName in pairs(logFunctionNames) do
