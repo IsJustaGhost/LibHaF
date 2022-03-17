@@ -107,18 +107,25 @@ local function fmt(formatString, ...)
 --	if not lib.enableDebug then return end
     
     if g_append then
-        formatString = formatString .. '[table] {%s}'
+    --    formatString = formatString .. ' [table] {%s}'
     end
 	
 	if type(formatString) == 'table' then
 		g_append = true
-		local tbl, fmtStr = {}, ''
+		local tbl, fmtStr = {}, '[table] {'
 		
 		for k, v in pairs(formatString) do
-			fmtStr = fmtStr .. k .. ' = %s, '
+			local keyformat = type(k) == 'string' and '["%s"]' or '[%s]'
+			k = string.format(type(k) == 'string' and '["%s"]' or '[%s]', k)
+			if type(v) == 'string' then
+				fmtStr = fmtStr .. k .. ' = "%s", '
+			else
+				fmtStr = fmtStr .. k .. ' = %s, '
+			end
 			table.insert(tbl, v)
 		end
 		if #tbl > 0 then
+			fmtStr = fmtStr:gsub(', $', '') .. '}'
 			return stfmt(fmtStr, unpack(tbl))
 		end
         g_append = false
@@ -311,7 +318,7 @@ local function getHookPocessingFunctions(prehookFunctions, posthookFunctions)
 		runPosthooks = function(...)
 			for registeredName, hookFunction in pairs(posthookFunctions) do
 				local returns = {hookFunction(...)}
-				HookManager:Debug('-- Run PostHook for: registeredName = %s, Returns = ', registeredName, fmt(returns)) 
+				HookManager:Debug('-- Run PostHook for: registeredName = %s, Returns = %s', registeredName, fmt(returns)) 
 			end
 		end
 	end
@@ -338,7 +345,7 @@ local function getUpdatedFunction(objectTable, existingFunctionName)
 			return true
 		else
 			local returns = {originalFn(...)}
-			HookManager:Debug('Run originalFn, Returns = ', fmt(returns))
+			HookManager:Debug('Run originalFn, Returns = %s', fmt(returns))
 			runPosthooks(...)
 			return unpack(returns)
 		end
@@ -381,7 +388,7 @@ local function sharedRegister(hookType, registeredName, objectTable, existingFun
 	hookFunctions[registeredName] = hookFunction
 	addRegisteredHook(registeredName, hookId)
 	
-	HookManager:Debug('%s%s = ', hookId:gsub(']$', '' ), suffix, fmt(hookFunctions))
+	HookManager:Debug('%s%s] = %s', hookId:gsub(']$', '' ), suffix, fmt(hookFunctions))
 	objectTable[existingFunctionName .. suffix] = hookFunctions
 	
 	updateHookedFunction(objectTable, existingFunctionName)
@@ -447,6 +454,7 @@ end
 JO_HOOK_MANAGER = HookManager
 
 --[[
+/script d(JO_HOOK_MANAGER:GetRegisteredHooks())
 add status returns for  un/registering?
 
 HOOK_MANAGER:RegisterForPreHook(addon.name .. '_HookTest', 'SomeFunction', function(self)
