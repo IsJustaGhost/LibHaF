@@ -16,7 +16,6 @@
 	Currently contains:
 		HookManager
 			adds the ability to "register" and "unregister" PreHooks and PostHooks. Allows all hooks to run.
-			Orginal function only runs if no prehook returns true.
 		ZO_FilteredNumericallyIndexedTableIterator
 			this version will iterate any number index, including decimals and below 1. (example[-∞] to example[∞])
 		RETICLE:GetInteractPromptVisible() and FISHING_MANAGER:StartInteraction()
@@ -33,6 +32,7 @@ local lib = {}
 lib.name = LIB_IDENTIFIER
 lib.version = LIB_VERSION
 _G[LIB_IDENTIFIER] = lib
+
 
 ---------------------------------------------------------------------------------------------------------------
 -- Debug
@@ -65,7 +65,7 @@ _G[LIB_IDENTIFIER] = lib
 ]]
 
 local debugOverride = true
-local logLevel
+local logLevel = debugOverride and LibDebugLogger.LOG_LEVEL_DEBUG or LibDebugLogger.LOG_LEVEL_INFO
 
 local g_append = false
 local function stfmt(ftSt, ...)
@@ -114,24 +114,23 @@ local function fmt(formatString, ...)
 end
 
 local function unpack_unordered_recursive(tbl, key)
-	local new_key, value = next(tbl, key)
-	if new_key == nil then return end
-  
-	return new_key, value, unpack_unordered_recursive(tbl, new_key)
-  end
-  
+  local new_key, value = next(tbl, key)
+  if new_key == nil then return end
+
+  return new_key, value, unpack_unordered_recursive(tbl, new_key)
+end
+
 local function tryUnpack(tbl)
-	  if type(tbl) ~= 'table' then return 'Not a table' end
-	  
-	  local key, value = next(tbl)
-	  if key == nil then return end
-	  
-	  return key, value, unpack_unordered_recursive(tbl, key)
-  end
+    if type(tbl) ~= 'table' then return 'Not a table' end
+	
+    local key, value = next(tbl)
+    if key == nil then return end
+    
+    return key, value, unpack_unordered_recursive(tbl, key)
+end
 
 local logFunctions = {}
 if LibDebugLogger then
-	logLevel = debugOverride and LibDebugLogger.LOG_LEVEL_DEBUG or LibDebugLogger.LOG_LEVEL_INFO
 	lib.logger = LibDebugLogger(LIB_IDENTIFIER)
 	local logFunctionNames = {"Verbose", "Debug", "Info", "Warn", "Error"}
 	for _, logFunctionName in pairs(logFunctionNames) do
@@ -198,6 +197,7 @@ end
 
 local HookManager = {}
 createLogger('HookManager', HookManager)
+HookManager.registeredHooks = {}
 
 local function getObjectName(object)
 	local tableId = tostring(object)
@@ -369,7 +369,7 @@ local function sharedRegister(hookType, registeredName, objectTable, existingFun
 	local objectTable, existingFunctionName, hookFunction, hookId = updateParameters(objectTable, existingFunctionName, hookFunction)
 
 	local suffix = '_' .. hookType .. 'hookFunctions'
-	self:Info('-- Begain RegisterFor%sHook: %s', hookType, hookId)
+	HookManager:Info('-- Begain RegisterFor%sHook: %s', hookType, hookId)
 	
 	local hookFunctions = objectTable[existingFunctionName .. suffix] or {}
 	
@@ -392,7 +392,7 @@ local function sharedUnregister(hookType, registeredName, objectTable, existingF
 	local objectTable, existingFunctionName, hookFunction, hookId = updateParameters(objectTable, existingFunctionName)
 
 	local suffix = '_' .. hookType .. 'hookFunctions'
-	self:Info('-- Begain UnregisterFor%sHook: %s', hookType, hookId)
+	HookManager:Info('-- Begain UnregisterFor%sHook: %s', hookType, hookId)
 	
 	local hookFunctions = objectTable[existingFunctionName .. suffix]
 	
@@ -459,6 +459,7 @@ HOOK_MANAGER:UnregisterForPostHook(addon.name .. '_HookTest', SomeObject, 'SomeF
 ---------------------------------------------------------------------------------------------------------------
 -- ZO_FilteredNumericallyIndexedTableIterator
 ---------------------------------------------------------------------------------------------------------------
+
 --[[
 function ZO_FilteredNumericallyIndexedTableIterator(tbl, filterFunctions)
 	local numFilters = filterFunctions and #filterFunctions or 0
@@ -599,6 +600,7 @@ local function notFishingAction()
 end
 
 local function performDeferredInitialization()
+	DeferredInitialization:Info('local function performDeferredInitialization')
 	-- Must insure these constants are updated after objects are created.
 	local lib_reticle = RETICLE
 	local lib_fishing_manager = FISHING_MANAGER
@@ -667,4 +669,5 @@ EVENT_MANAGER:RegisterForEvent(lib.name, EVENT_PLAYER_ACTIVATED, onPlayerActivat
 			end
 		</Down>
 ]]
+
 
