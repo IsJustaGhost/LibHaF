@@ -89,36 +89,18 @@ do
 	end
 end
 
-local function getRegisterHookFunction(hookType)
-	if not LibHaF then
-		if hookType == 'Pre' then
-			return function(name, ...)
-				return ZO_PreHook(...)
-			end
-		end
-		return function(name, ...)
-			return ZO_PostHook(...)
-		end
-	end
-	
-	return function(name, ...)
-		return JO_HOOK_MANAGER['RegisterFor' .. hookType .. 'Hook'](name, ...)
-	end
+local HookManager = {}
+function HookManager:RegisterForPreHook(name, ...)
+	return ZO_PreHook(...)
+end 
+function HookManager:RegisterForPostHook(name, ...)
+	return ZO_PostHook(...)
+end 
+function HookManager:UnregisterForPrehook()
+	return false 
+end
+function HookManager:UnregisterForPosthook()
+	return false 
 end
 
-local function getUnregisterHookFunction(hookType)
-	if not LibHaF then 
-		return function() 
-			return false 
-		end 
-	end
-	
-	return function(name, ...)
-		return JO_HOOK_MANAGER['UnregisterFor' .. hookType .. 'Hook'](name, ...)
-	end
-end
-
-IJA_RegisterForPrehook = getRegisterHookFunction('Pre')
-IJA_RegisterForPosthook = getRegisterHookFunction('Post')
-IJA_UnregisterForPrehook = getUnregisterHookFunction('Pre')
-IJA_UnregisterForPosthook = getUnregisterHookFunction('Post')
+if not JO_HOOK_MANAGER then JO_HOOK_MANAGER = HookManager end
