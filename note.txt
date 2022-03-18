@@ -1,0 +1,124 @@
+Currently adding the following to, for my addons that may use functinos from the lib, english string file.
+
+---------------------------------------------------------------------------------------------------------------
+-- Experimental
+---------------------------------------------------------------------------------------------------------------
+--[[ About LibHaF:
+	LibHaF is an experimental library which I am not ready to release. This file will allow me to use the modifications
+	on this version of this addon I release without having to release LibHaF. This will allow me to test LibHaF more thoroughly
+	and make changes without having to update this addon every time.
+]]
+
+if IJA_RegisterForPosthook then return end
+
+if not LibHaF then
+	local isFish = GetString(SI_GAMECAMERAACTIONTYPE16)
+	
+	local original_StartInteraction = FISHING_MANAGER.StartInteraction
+	function FISHING_MANAGER:StartInteraction()
+		if RETICLE.interactionBlocked and select(1, GetGameCameraInteractableActionInfo()) ~= isFish then
+			return true
+		end
+		
+		return original_StartInteraction(self)
+	end
+
+	local original_GetInteractPromptVisible = RETICLE.GetInteractPromptVisible
+	function RETICLE:GetInteractPromptVisible()
+		if RETICLE.interactionBlocked and select(1, GetGameCameraInteractableActionInfo()) ~= isFish then
+			return false
+		end
+		return original_GetInteractPromptVisible(self)
+	end
+end
+
+do
+    -- this version will iterate any number index, including decimals and below 1. (example[-∞] to example[∞])
+	-- including tables where indices are not consecutive. 1,2,4,7
+	-- if there are non numeric indexes in table, they will be skipped without preventing table iterations. -- not currently true
+	-- removed the type check due to causing errors
+	local function getIndexList(t)
+		local indexList = {}
+		for k,v in pairs(t) do
+			table.insert(indexList, k)
+		end
+		table.sort(indexList, function(a, b) return a < b end)
+		return indexList
+	end
+	function ZO_FilteredNumericallyIndexedTableIterator(tbl, filterFunctions)
+		local indexList = getIndexList(tbl)
+		local numFilters = filterFunctions and #filterFunctions or 0
+		local index = 0
+		local count = #indexList
+		if numFilters > 0  then
+			return function()
+				index = index + 1
+				while index <= count do
+					local passesFilter = true
+					local data = tbl[indexList[index]]
+					if data ~= nil then
+						for filterIndex = 1, numFilters do
+							if not filterFunctions[filterIndex](data) then
+								passesFilter = false
+								break
+							end
+						end
+						if passesFilter then
+							return index, data
+						else
+							index = index + 1
+						end
+					else
+						index = index + 1
+					end
+				end
+			end
+		else
+			return function()
+				index = index + 1
+				while index <= count do
+					local data = tbl[indexList[index]]
+					if data ~= nil then
+						return index, data
+					else
+						index = index + 1
+					end
+				end
+			end
+		end
+	end
+end
+
+local function getRegisterHookFunction(hookType)
+	if not LibHaF then
+		if hookType == 'Pre' then
+			return function(name, ...)
+				return ZO_PreHook(...)
+			end
+		end
+		return function(name, ...)
+			return ZO_PostHook(...)
+		end
+	end
+	
+	return function(name, ...)
+		return JO_HOOK_MANAGER['RegisterFor' .. hookType .. 'Hook'](name, ...)
+	end
+end
+
+local function getUnregisterHookFunction(hookType)
+	if not LibHaF then 
+		return function() 
+			return false 
+		end 
+	end
+	
+	return function(name, ...)
+		return JO_HOOK_MANAGER['UnregisterFor' .. hookType .. 'Hook'](name, ...)
+	end
+end
+
+IJA_RegisterForPrehook = getRegisterHookFunction('Pre')
+IJA_RegisterForPosthook = getRegisterHookFunction('Post')
+IJA_UnregisterForPrehook = getUnregisterHookFunction('Pre')
+IJA_UnregisterForPosthook = getUnregisterHookFunction('Post')

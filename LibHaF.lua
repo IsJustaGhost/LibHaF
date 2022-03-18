@@ -33,7 +33,6 @@ lib.name = LIB_IDENTIFIER
 lib.version = LIB_VERSION
 _G[LIB_IDENTIFIER] = lib
 
-
 ---------------------------------------------------------------------------------------------------------------
 -- Debug
 ---------------------------------------------------------------------------------------------------------------
@@ -140,21 +139,22 @@ local function fmt(formatString, ...)
 end
 
 local logFunctions = {}
+local logFunctionNames = {"Verbose", "Debug", "Info", "Warn", "Error"}
 if LibDebugLogger then
+	logLevel = debugOverride and LibDebugLogger.LOG_LEVEL_DEBUG or LibDebugLogger.LOG_LEVEL_INFO
 	lib.logger = LibDebugLogger(LIB_IDENTIFIER)
-	local logFunctionNames = {"Verbose", "Debug", "Info", "Warn", "Error"}
 	for _, logFunctionName in pairs(logFunctionNames) do
 		logFunctions[logFunctionName] = function(self, ...) return self.logger[logFunctionName](self.logger, fmt(...)) end
 		lib[logFunctionName] = logFunctions[logFunctionName]
 	end
 	lib.logger:SetMinLevelOverride(logLevel)
 else
-	local logFunctionNames = {"Verbose", "Debug", "Info", "Warn", "Error"}
 	for _, logFunctionName in pairs(logFunctionNames) do
 		logFunctions[logFunctionName] = function(...) end
 		lib[logFunctionName] = logFunctions[logFunctionName]
 	end
 end
+lib:Info('Initialize')
 
 local function createLogger(name, moduleTable)
 	if lib.logger then
@@ -596,7 +596,7 @@ end
 ---------------------------------------------------------------------------------------------------------------
 --[[ About:
 	These functions will not stack the callback if called several times in a row.
-
+	
 	JO_CallLater is simmular to zo_callLater, but can be ran several times in a row without stacking.
 
 	JO_CallLaterOnScene is useful for situations where you want changes applied after a specified scene is shown.
@@ -609,7 +609,7 @@ end
 	JO_CallLaterOnNextScene(addon.name .. '_test', function() end)
 ]]
 
-JO_CallLater = function(id, func, ms)
+jo_callLater = function(id, func, ms)
 	if ms == nil then ms = 0 end
     local name = "JO_CallLater_".. id
 	EVENT_MANAGER:UnregisterForUpdate(name)
@@ -622,7 +622,7 @@ JO_CallLater = function(id, func, ms)
     return id
 end
 
-JO_CallLaterOnScene = function(id, sceneName, func)
+jo_callLaterOnScene = function(id, sceneName, func)
 	if not sceneName or type(sceneName) ~= 'string' then return end
 	
 	local updateName = "JO_CallLaterOnScene_" .. id
@@ -638,7 +638,7 @@ JO_CallLaterOnScene = function(id, sceneName, func)
 	EVENT_MANAGER:RegisterForUpdate(updateName, 100, OnUpdateHandler)
 end
 
-JO_CallLaterOnNextScene = function(id, func)
+jo_callLaterOnNextScene = function(id, func)
 	local sceneName = SCENE_MANAGER:GetCurrentSceneName()
 	local updateName = "JO_CallLaterOnNextScene_" .. id
     EVENT_MANAGER:UnregisterForUpdate(updateName)
@@ -654,15 +654,8 @@ JO_CallLaterOnNextScene = function(id, func)
 end
 
 ---------------------------------------------------------------------------------------------------------------
--- DeferredInitialization - functions that need to be set up after loading
+-- Modifications to allow disabling interactions
 ---------------------------------------------------------------------------------------------------------------
---[[ About DeferredInitialization:
-	DeferredInitialization is used to initialize modifications of objects that are not created OnInitialize.
-]]
-
-local DeferredInitialization = {}
-createLogger('DeferredInitialization', DeferredInitialization)
-
 local fishingActions = {
 	[GetString(SI_GAMECAMERAACTIONTYPE16)] = true, -- "Fish"
 --	[GetString(SI_GAMECAMERAACTIONTYPE17)] = true, -- "Reel In"
@@ -673,50 +666,37 @@ local function notFishingAction()
 	return not fishingActions[action]
 end
 
-local function performDeferredInitialization()
-	DeferredInitialization:Info('local function performDeferredInitialization')
-	-- Must insure these constants are updated after objects are created.
-	local lib_reticle = RETICLE
-	local lib_fishing_manager = FISHING_MANAGER
-	local lib_fishing_gamepad = FISHING_GAMEPAD
-	local lib_fishing_keyboard = FISHING_KEYBOARD
+local lib_reticle = RETICLE
+local lib_fishing_manager = FISHING_MANAGER
+local lib_fishing_gamepad = FISHING_GAMEPAD
+local lib_fishing_keyboard = FISHING_KEYBOARD
 
-	-- RETICLE:GetInteractPromptVisible and FISHING_MANAGER:StartInteraction are used to disable interactions.
-	-- set RETICLE.interactionBlocked = true to disable
-	function lib_reticle:GetInteractPromptVisible()
-		-- disables interaction in gamepad mode and allows jumping
-		-- the aftion must not be for fishing. interactionBlocked == true before bait is selected
-		if lib_reticle.interactionBlocked and notFishingAction() then
-			return false
-		end
-		return not self.interact:IsHidden()
+-- RETICLE:GetInteractPromptVisible and FISHING_MANAGER:StartInteraction are used to disable interactions.
+-- set RETICLE.interactionBlocked = true to disable
+function lib_reticle:GetInteractPromptVisible()
+	-- disables interaction in gamepad mode and allows jumping
+	-- the aftion must not be for fishing. interactionBlocked == true before bait is selected
+	if lib_reticle.interactionBlocked and notFishingAction() then
+		return false
 	end
-	
-	function lib_fishing_manager:StartInteraction()
-	--	DeferredInitialization:Debug('FISHING_MANAGER: RETICLE.interactionBlocked = %s', lib_reticle.interactionBlocked)
-		if lib_reticle.interactionBlocked and notFishingAction() then
-			-- disables interaction in keyboard mode
-			-- returning true here will prevent GameCameraInteractStart() form firing
-			return true
-		end
-		
-		self.gamepad = IsInGamepadPreferredMode()
-		if self.gamepad then
-			return lib_fishing_gamepad:StartInteraction()
-		else
-			return lib_fishing_keyboard:StartInteraction()
-		end
-	end
-	--	/script d(RETICLE.interactionBlocked)
+	return not self.interact:IsHidden()
 end
 
-local function onPlayerActivated()
-	EVENT_MANAGER:UnregisterForEvent(lib.name, EVENT_PLAYER_ACTIVATED)
+function lib_fishing_manager:StartInteraction()
+	lib:Debug('FISHING_MANAGER: RETICLE.interactionBlocked = %s', lib_reticle.interactionBlocked)
+	if lib_reticle.interactionBlocked and notFishingAction() then
+		-- disables interaction in keyboard mode
+		-- returning true here will prevent GameCameraInteractStart() form firing
+		return true
+	end
 	
-	DeferredInitialization:Info('onPlayerActivated')
-	performDeferredInitialization()
+	self.gamepad = IsInGamepadPreferredMode()
+	if self.gamepad then
+		return lib_fishing_gamepad:StartInteraction()
+	else
+		return lib_fishing_keyboard:StartInteraction()
+	end
 end
-EVENT_MANAGER:RegisterForEvent(lib.name, EVENT_PLAYER_ACTIVATED, onPlayerActivated)
 
 --[[
 	binding handlers for interaction
@@ -727,7 +707,7 @@ EVENT_MANAGER:RegisterForEvent(lib.name, EVENT_PLAYER_ACTIVATED, onPlayerActivat
 		<Down>
 			ZO_SetJumpOrInteractDownAction(ZO_JUMP_OR_INTERACT_DID_NOTHING)
 
-			local interactPromptVisible = RETICLE:GetInteractPromptVisible() --< setting this to false will prevent inteaction
+			local interactPromptVisible = RETICLE:GetInteractPromptVisible() --< setting this to false will prevent interaction
 
 			local isInactiveClickableFixture = IsGameCameraClickableFixture() and not IsGameCameraClickableFixtureActive()
 			if not IsBlockActive() then  --don't allow Interactions or Jumps while blocking on Gamepad as it will trigger a roll anyway.
@@ -744,4 +724,13 @@ EVENT_MANAGER:RegisterForEvent(lib.name, EVENT_PLAYER_ACTIVATED, onPlayerActivat
 		</Down>
 ]]
 
+---------------------------------------------------------------------------------------------------------------
+-- DeferredInitialization - functions that need to be set up after loading
+---------------------------------------------------------------------------------------------------------------
+--[[ About DeferredInitialization:
+	DeferredInitialization is used to initialize modifications of objects that are not created OnInitialize.
+]]
+
+local DeferredInitialization = {}
+createLogger('DeferredInitialization', DeferredInitialization)
 
