@@ -9,7 +9,8 @@ Currently adding the following to, for my addons that may use functinos from the
 	and make changes without having to update this addon every time.
 ]]
 
-if IJA_RegisterForPosthook then return end
+if IJA_LibHaFInitialize then return end
+IJA_LibHaFInitialize = true
 
 if not LibHaF then
 	local isFish = GetString(SI_GAMECAMERAACTIONTYPE16)
