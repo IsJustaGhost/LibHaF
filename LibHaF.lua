@@ -654,6 +654,89 @@ jo_callLaterOnNextScene = function(id, func)
 end
 
 ---------------------------------------------------------------------------------------------------------------
+-- JO_UpdateBuffer
+---------------------------------------------------------------------------------------------------------------
+--[[ About JO_UpdateBuffer_New:
+	Useful when multiple triggers can fire the function but only want it to fire on the final call.
+		for an example of it being used, see: "IsJusta Gamepad UI Visibility Helper" in dynamicChat.lua
+	
+	JO_UpdateBuffer
+		local ENABLED = bool or nil
+		self.UpdateBuffer = JO_UpdateBuffer('TEST', function(self, ...) end, ENABLED)
+		or
+		self.UpdateBuffer = JO_UpdateBuffer('TEST', function(self, ...) end)
+
+		self.UpdateBuffer:Enable(enabled)
+		self.UpdateBuffer:OnUpdate(arg1, arg2, ...)
+
+	JO_UpdateBuffer_Simple
+		self.OnUpdate = JO_UpdateBuffer_Simple('TEST', function(self, ...)
+			d( '--	TestUpdateBuffer', ...)
+		end)
+		
+		self:OnUpdate(arg1, arg2, ...)
+	
+	/script self:OnUpdate('1'); self:OnUpdate('2'); self:OnUpdate('3'); self:OnUpdate('4')
+	would result only in 
+		'--	TestUpdateBuffer'
+		'4'
+
+	/script TestClass = JO_UpdateBuffer:Subclass()
+]]
+
+local UpdateBuffer = ZO_InitializingObject:Subclass()
+createLogger('UpdateBuffer', UpdateBuffer)
+
+function UpdateBuffer:Initialize(id, func, enabled)
+	self.updateName = "JO_UpdateBuffer_" .. id
+	
+	self:Info('UpdateBuffer:Initialize: updateName = %s', self.updateName)
+	
+	self.enabled = enabled or true
+	
+	self.CallbackFn = func
+end
+
+function UpdateBuffer:OnUpdate(...)
+	local params = {...}
+	self:Debug('UpdateBuffer:OnUpdate: updateName = %s', self.updateName, fmt(params))
+	
+	EVENT_MANAGER:UnregisterForUpdate(self.updateName)
+	
+	local function OnUpdateHandler()
+		EVENT_MANAGER:UnregisterForUpdate(self.updateName)
+		self:CallbackFn(unpack(params))
+	end
+	
+	if self.enabled then
+		EVENT_MANAGER:RegisterForUpdate(self.updateName, 100, OnUpdateHandler)
+	end
+end
+
+function UpdateBuffer:SetEnabled(enabled)
+	self:Info('UpdateBuffer:SetEnabled: updateName = %s, enabled = %s', self.updateName, enabled)
+	self.enabled = enabled
+end
+
+JO_UpdateBuffer = UpdateBuffer
+
+function JO_UpdateBuffer_Simple(id, func)
+	local updateName = "JO_UpdateBuffer_Simple_" .. id
+
+	return function(...)
+		local params = {...}
+		EVENT_MANAGER:UnregisterForUpdate(updateName)
+		
+		local function OnUpdateHandler()
+			EVENT_MANAGER:UnregisterForUpdate(updateName)
+			func(unpack(params))
+		end
+		
+		EVENT_MANAGER:RegisterForUpdate(updateName, 100, OnUpdateHandler)
+	end
+end
+
+---------------------------------------------------------------------------------------------------------------
 -- Modifications to allow disabling interactions
 ---------------------------------------------------------------------------------------------------------------
 local fishingActions = {
