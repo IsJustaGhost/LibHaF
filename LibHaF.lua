@@ -864,20 +864,21 @@ function lib_fishing_manager:StartInteraction()
 end
 
 -- Experimental: can register fiter functions used for diabeling interactions, intead of custom hook functions.
--- Is currently in use by "IsJusta Disable Actions While Moving"
+-- Is currently in use by "IsJusta Disable Actions While Moving". May be in > 1.4.2
+---------------------------------------------------------------------------------------------------------------
 lib_reticle.actionFilters = {}
 function lib_reticle:SetInteractionBlocked(blocked)
 	self.interactionBlocked = blocked
 end
 
 -- comparator, filter, ??
-function lib_reticle:RegisterActionBlockedComparator(registerdName, action, comparator)
+function lib_reticle:RegisterActionBlockedFilter(registerdName, action, Filter)
 	if not self.actionFilters[action] then self.actionFilters[action] = {} end
-	self.actionFilters[action][registerdName] = comparator
-	return comparator
+	self.actionFilters[action][registerdName] = Filter
+	return Filter
 end
 
-function lib_reticle:UnregisterActionBlockedComparator(registerdName, action)
+function lib_reticle:UnregisterActionBlockedFilter(registerdName, action)
 	if not self.actionFilters[action] and self.actionFilters[action][registerdName] then
 		self.actionFilters[action][registerdName] = nil
 	end
@@ -919,7 +920,7 @@ end)
 	}
 
 	for actionName in pairs(actionsTable) do
-		RETICLE:RegisterActionBlockedComparator(addon.name, actionName, function(action, interactableName, currentFrameTimeSeconds)
+		RETICLE:RegisterActionBlockedFilter(addon.name, actionName, function(action, interactableName, currentFrameTimeSeconds)
 			if disabledInteractions(action, interactableName) then
 				if isActionDisabled(action, interactableName, currentFrameTimeSeconds) then
 					playFromStart()
