@@ -895,9 +895,9 @@ function lib_reticle:IsInteractionBlocked(interactionPossible, currentFrameTimeS
 	
 	if actionFilters then
 		for registeredName, actionFilter in pairs(actionFilters) do
-			local Returns = actionFilter(action, interactableName, currentFrameTimeSeconds, currentFrameTimeSeconds)
+			local Returns = actionFilter(action, interactableName, interactionPossible, currentFrameTimeSeconds)
 	--		lib_reticle:Debug('actionFilter: registeredName = %s, actionFilter Returns = %s', registeredName, Returns)
-			if actionFilter(action, interactableName, currentFrameTimeSeconds, currentFrameTimeSeconds) then
+			if actionFilter(action, interactableName, interactionPossible, currentFrameTimeSeconds) then
 				return true
 			end
 		end
