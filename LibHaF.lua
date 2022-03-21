@@ -836,12 +836,21 @@ local lib_fishing_manager = FISHING_MANAGER
 local lib_fishing_gamepad = FISHING_GAMEPAD
 local lib_fishing_keyboard = FISHING_KEYBOARD
 
+
+--[[
+	using RETICLE.interactionBlocked this way will not allow fishing to be blocked if desiered.
+	consider
+	RETICLE.interactionDisabled
+
+
+]]
 -- RETICLE:GetInteractPromptVisible and FISHING_MANAGER:StartInteraction are used to disable interactions.
 -- set RETICLE.interactionBlocked = true to disable
 function lib_reticle:GetInteractPromptVisible()
 	-- disables interaction in gamepad mode and allows jumping
 	-- the aftion must not be for fishing. interactionBlocked == true before bait is selected
-	if lib_reticle.interactionBlocked and notFishingAction() then
+	--if self.interactionBlocked and notFishingAction() then
+	if self.interactionDisabled then
 		return false
 	end
 	return not self.interact:IsHidden()
@@ -849,7 +858,8 @@ end
 
 function lib_fishing_manager:StartInteraction()
 --	lib_reticle:Debug('FISHING_MANAGER: RETICLE.interactionBlocked = %s', lib_reticle.interactionBlocked)
-	if lib_reticle.interactionBlocked and notFishingAction() then
+	--if lib_reticle.interactionBlocked and notFishingAction() then
+	if lib_reticle.interactionDisabled then
 		-- disables interaction in keyboard mode
 		-- returning true here will prevent GameCameraInteractStart() form firing
 		return true
@@ -871,11 +881,15 @@ function lib_reticle:SetInteractionBlocked(blocked)
 	self.interactionBlocked = blocked
 end
 
+function lib_reticle:SetInteractionDisabled(disabled)
+	self.interactionDisabled = disabled
+end
+
 -- comparator, filter, ??
-function lib_reticle:RegisterActionBlockedFilter(registerdName, action, Filter)
+function lib_reticle:RegisterActionBlockedFilter(registerdName, action, filter)
 	if not self.actionFilters[action] then self.actionFilters[action] = {} end
-	self.actionFilters[action][registerdName] = Filter
-	return Filter
+	self.actionFilters[action][registerdName] = filter
+	return filter
 end
 
 function lib_reticle:UnregisterActionBlockedFilter(registerdName, action)
@@ -908,7 +922,7 @@ end
 
 JO_HOOK_MANAGER:RegisterForPostHook(lib.name, lib_reticle, "TryHandlingInteraction", function(self, interactionPossible, currentFrameTimeSeconds)
 	if not interactionPossible then return end
-	self.interactionBlocked = self:IsInteractionBlocked(currentFrameTimeSeconds)
+	self.interactionDisabled = self:IsInteractionBlocked(currentFrameTimeSeconds)
 --	lib_reticle:Debug('self.interactionBlocked = %s', self.interactionBlocked)
 end)
 
@@ -935,17 +949,8 @@ end)
 ]]
 
 --[[
-
 /script d(RETICLE.actionFilters)
-JO_PostHook.Register = 
-JO_PostHook.Unregister = 
 
-JO_PostHookHandler.Register = 
-JO_PostHookHandler.Unregister = 
-
-
-]]
---[[
 	binding handlers for interaction
 	- Keyboard 
 		<Down>if not FISHING_MANAGER:StartInteraction() then GameCameraInteractStart() end</Down>
