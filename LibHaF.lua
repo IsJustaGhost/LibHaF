@@ -935,8 +935,8 @@ end)
 
 	for actionName in pairs(actionsTable) do
 		RETICLE:RegisterActionBlockedFilter(addon.name, actionName, function(action, interactableName, currentFrameTimeSeconds)
-			if disabledInteractions(action, interactableName) then
-				if isActionDisabled(action, interactableName, currentFrameTimeSeconds) then
+			if disabledInteractions(action, interactableName) then -- this funciton checks if the current action or name is enabled to be disabled
+				if isActionDisabled(action, interactableName, currentFrameTimeSeconds) then -- here we check if it should currently be disabled.
 					playFromStart()
 					return true
 				else
