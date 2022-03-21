@@ -879,7 +879,7 @@ function lib_reticle:RegisterActionBlockedFilter(registerdName, action, Filter)
 end
 
 function lib_reticle:UnregisterActionBlockedFilter(registerdName, action)
-	if not self.actionFilters[action] and self.actionFilters[action][registerdName] then
+	if self.actionFilters[action] and self.actionFilters[action][registerdName] then
 		self.actionFilters[action][registerdName] = nil
 	end
 end
