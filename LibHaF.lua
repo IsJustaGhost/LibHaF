@@ -887,7 +887,7 @@ function lib_reticle:GetActionBlockedFunctions(action)
 	return self.actionFilters[action]
 end
 
-function lib_reticle:IsInteractionBlocked(interactionPossible, currentFrameTimeSeconds)
+function lib_reticle:IsInteractionBlocked(currentFrameTimeSeconds)
 	local action, interactableName = GetGameCameraInteractableActionInfo()
 --	lib_reticle:Debug('action = %s, interactableName = %s, self.interactionBlocked = %s', action, interactableName, self.interactionBlocked)
 	if action == nil then return self.interactionBlocked end
@@ -897,7 +897,7 @@ function lib_reticle:IsInteractionBlocked(interactionPossible, currentFrameTimeS
 		for registeredName, actionFilter in pairs(actionFilters) do
 	--		local Returns = actionFilter(action, interactableName, interactionPossible, currentFrameTimeSeconds)
 	--		lib_reticle:Debug('actionFilter: registeredName = %s, actionFilter Returns = %s', registeredName, Returns)
-			if actionFilter(action, interactableName, interactionPossible, currentFrameTimeSeconds) then
+			if actionFilter(action, interactableName, currentFrameTimeSeconds) then
 				return true
 			end
 		end
@@ -907,7 +907,7 @@ end
 
 JO_HOOK_MANAGER:RegisterForPostHook(lib.name, lib_reticle, "TryHandlingInteraction", function(self, interactionPossible, currentFrameTimeSeconds)
 	if not interactionPossible then return end
-	self.interactionBlocked = self:IsInteractionBlocked(interactionPossible, currentFrameTimeSeconds)
+	self.interactionBlocked = self:IsInteractionBlocked(currentFrameTimeSeconds)
 --	lib_reticle:Debug('self.interactionBlocked = %s', self.interactionBlocked)
 end)
 
