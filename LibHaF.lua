@@ -863,6 +863,8 @@ function lib_fishing_manager:StartInteraction()
 	end
 end
 
+-- Experimental: can register fiter functions used for diabeling interactions, intead of custom hook functions.
+-- Is currently in use by "IsJusta Disable Actions While Moving"
 lib_reticle.actionFilters = {}
 function lib_reticle:SetInteractionBlocked(blocked)
 	self.interactionBlocked = blocked
@@ -909,22 +911,31 @@ JO_HOOK_MANAGER:RegisterForPostHook(lib.name, lib_reticle, "TryHandlingInteracti
 --	lib_reticle:Debug('self.interactionBlocked = %s', self.interactionBlocked)
 end)
 
---[[
-/script d(RETICLE.actionFilters)
-for actionName in pairs(actionsTable) do
-	RETICLE:RegisterActionBlockedComparator(addon.name, actionName, function(action, interactableName, currentFrameTimeSeconds)
-		if disabledInteractions(action, interactableName) then
-			if isActionDisabled(action, interactableName, currentFrameTimeSeconds) then
-				playFromStart()
-				return true
-			else
-				playInstantlyToEnd()
-			end
-		end
-		return false
-	end)
-end
+--[[ Example usage.
 
+	local actionsTable = {
+		[GetString("SI_GAMECAMERAACTIONTYPE", 1)]	= 1,
+		[GetString("SI_GAMECAMERAACTIONTYPE", 2)]	= 2,
+	}
+
+	for actionName in pairs(actionsTable) do
+		RETICLE:RegisterActionBlockedComparator(addon.name, actionName, function(action, interactableName, currentFrameTimeSeconds)
+			if disabledInteractions(action, interactableName) then
+				if isActionDisabled(action, interactableName, currentFrameTimeSeconds) then
+					playFromStart()
+					return true
+				else
+					playInstantlyToEnd()
+				end
+			end
+			return false
+		end)
+	end
+]]
+
+--[[
+
+/script d(RETICLE.actionFilters)
 JO_PostHook.Register = 
 JO_PostHook.Unregister = 
 
