@@ -207,9 +207,9 @@ local zo_hooks = {
 	['ZO_PostHookHandler'] = ZO_PostHookHandler,
 }
 
-local function getObjectName(object)
-	local tableId = tostring(object)
-	if type(object) ~= 'table' then return false end -- '_Not_A_Object_'
+local function getObjectName(objectTable)
+	local tableId = tostring(objectTable)
+	if type(objectTable) ~= 'table' then return false end -- '_Not_A_Object_'
 	if tableId == tostring(_G) then
 		return '_G'
 	end
@@ -307,7 +307,7 @@ local function sharedUnregister(hookType, registeredName, objectTable, existingF
 			objectTable[existingFunctionName .. suffix] = hookFunctions
 		end
 	end
-	
+
 	return objectTable[existingFunctionName .. '_Original']
 end
 
