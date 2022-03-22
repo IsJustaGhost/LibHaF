@@ -307,6 +307,8 @@ local function sharedUnregister(hookType, registeredName, objectTable, existingF
 			objectTable[existingFunctionName .. suffix] = hookFunctions
 		end
 	end
+	
+	return objectTable[existingFunctionName .. '_Original']
 end
 
 local count = 0
@@ -314,37 +316,54 @@ local function register_Hook(hookType, registeredName, objectTable, existingFunc
 	count = count + 1
 	JO_HOOK_MANAGER.count = count
 	
+	if not objectTable[existingFunctionName .. '_Original'] then
+		-- Store the original function for later use.
+		objectTable[existingFunctionName .. '_Original'] = objectTable[existingFunctionName]
+	end
+
 	HookManager:Info('local function register_Hook: registeredName = %s, %s', registeredName, hookId)
 	local suffix = '_' .. hookType .. 'HookFunctions'
 	
 	local hookFunctions = objectTable[existingFunctionName .. suffix]
 	if not hookFunctions then
+		-- If this function has not yet been hooked, lets create a hook using a customHookFunction that will cycle through registered hooks.
 		hookFunctions = {}
 		local customHookFunction = getCustomHookFunction(hookType, objectTable, existingFunctionName, hookId)
 		zo_hooks['ZO_' .. hookType .. 'Hook'](objectTable, existingFunctionName, customHookFunction)
 	end
 
 	hookFunctions[registeredName] = hookFunction
+	-- Store the registered hook Functions.
 	objectTable[existingFunctionName .. suffix] = hookFunctions
+
+	return objectTable[existingFunctionName .. '_Original']
 end
 
 local function register_Handler(hookType, registeredName, control, handlerName, hookFunction)
 	count = count + 1
 	JO_HOOK_MANAGER.count = count
 	
+	if not control[handlerName .. '_Original'] then
+		control[handlerName .. '_Original'] = control:GetHandler(handlerName)
+	end
+
 	local hookId = getOrCreateHookId(control, handlerName)
 	HookManager:Info('local function register_Handler: registeredName = %s, %s', registeredName, hookId)
 	local suffix = '_' .. hookType .. 'HookFunctions'
 	
 	local hookFunctions = control[handlerName .. suffix]
 	if not hookFunctions then
+		-- If this function has not yet been hooked, lets create a hook using a customHookFunction that will cycle through registered hooks.
 		hookFunctions = {}
 		local customHookFunction = getCustomHookFunction(hookType, control, handlerName, hookId)
 		zo_hooks['ZO_' .. hookType .. 'HookHandler'](control, handlerName, customHookFunction)
 	end
 
 	hookFunctions[registeredName] = hookFunction
+	-- Store the registered hook Functions.
 	control[handlerName .. suffix] = hookFunctions
+
+	return control[handlerName .. '_Original']
 end
 
 do -- Pre-hooks
@@ -397,21 +416,17 @@ do
 	end
 	
 	ZO_PreHook = function(...)
-		register_Hook('Pre', getNextId('ZO_PreHook'), getUpdatedParameters(...))
-		return
+		return register_Hook('Pre', getNextId('ZO_PreHook'), getUpdatedParameters(...))
 	end
 	ZO_PostHook = function(...)
-		register_Hook('Post', getNextId('ZO_PostHook'), getUpdatedParameters(...))
-		return
+		return register_Hook('Post', getNextId('ZO_PostHook'), getUpdatedParameters(...))
 	end
 	
 	ZO_PreHookHandler = function(...)
-		register_Handler('Pre', getNextId('ZO_PreHookHandler'), ...)
-		return
+		return register_Handler('Pre', getNextId('ZO_PreHookHandler'), ...)
 	end
 	ZO_PostHookHandler = function(...)
-		register_Handler('Post', getNextId('ZO_PostHookHandler'), ...)
-		return
+		return register_Handler('Post', getNextId('ZO_PostHookHandler'), ...)
 	end
 end
 
