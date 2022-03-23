@@ -34,6 +34,11 @@ lib.version = LIB_VERSION
 _G[LIB_IDENTIFIER] = lib
 
 ---------------------------------------------------------------------------------------------------------------
+-- Constants
+---------------------------------------------------------------------------------------------------------------
+
+
+---------------------------------------------------------------------------------------------------------------
 -- Debug
 ---------------------------------------------------------------------------------------------------------------
 --[[ About debug:
@@ -66,22 +71,6 @@ _G[LIB_IDENTIFIER] = lib
 local debugOverride = true
 local logLevel
 
-local function unpack_unordered_recursive(tbl, key)
-  local new_key, value = next(tbl, key)
-  if new_key == nil then return end
-
-  return new_key, value, unpack_unordered_recursive(tbl, new_key)
-end
-
-local function tryUnpack(tbl)
-    if type(tbl) ~= 'table' then return 'Not a table' end
-	
-    local key, value = next(tbl)
-    if key == nil then return end
-    
-    return key, value, unpack_unordered_recursive(tbl, key)
-end
-
 local g_append = false
 local function stfmt(ftSt, ...)
 --	if not ftSt then return end
@@ -106,7 +95,7 @@ local function fmt(formatString, ...)
 --	if not lib.enableDebug then return end
     
     if g_append then
-    --    formatString = formatString .. ' [table] {%s}'
+        formatString = formatString .. ' %s'
     end
 	
 	if type(formatString) == 'table' then
@@ -173,32 +162,41 @@ end
 	The hookId is used to identify the hook as a string. Mainly used for debug.
 		hookId = objectTable[existingFunctionName] as string 'FISHING_MANAGER["StartInteraction"]'
 	
-	All functions, posthooks, prehooks, and hookIds are appended to the objectTable to be used later.
+	All original functions, posthooks, prehooks, hookIds are appended to the objectTable to be used later.
 	
+	objectTable[existingFunctionName .. '_Original'] = originalFunciton
 	objectTable[existingFunctionName .. '_PrehookFunctions'] = {["name_given_at_register"] = hookFunciton}
 	objectTable[existingFunctionName .. '_PosthookFunctions'] = {["name_given_at_register"] = hookFunciton}
 	hookIds are appended as objectTable["registeredHooks"] {[existingFunctionName] = hookId}
 	
 	examples:
+		RETICLE.OnUpdate_Original = originalFunciton
 		RETICLE.OnUpdate_PrehookFunctions = {["name_given_at_register"] = hookFunciton}
 		RETICLE.OnUpdate_PosthookFunctions = {["name_given_at_register"] = hookFunciton}
+		RETICLE.OnUpdate = modifiedHookFunction
 		
+		RETICLE.TryHandlingInteraction_Original = originalFunciton
 		RETICLE.TryHandlingInteraction_PrehookFunctions = {["name_given_at_register"] = hookFunciton}
 		RETICLE.TryHandlingInteraction_PosthookFunctions = {["name_given_at_register"] = hookFunciton}
+		RETICLE.TryHandlingInteraction = modifiedHookFunction
 		
 		RETICLE.registeredHooks = {
 			[OnUpdate] = 'RETICLE["OnUpdate"]',
 			[TryHandlingInteraction] = 'RETICLE["TryHandlingInteraction"]',
 		}
-
-	The "customHookFunction" is a custom function that cycles through registered hooks.
-	It is hooked through one of the default ZO_hook functions.
-	ZO_PreHook(objectTable, existingFunctionName, customHookFunction)
 	
+	For functions that are nested the hookId will be '_Not_Found_[existingFunctionName]'
+	There would need to be a traceback to figure out the full 'path' of the objectTable and I am not sure how to do this.
+	Take 'SMITHING_GAMEPAD.deconstructionPanel.inventory' as an example.
+	If a registered prehook returns true, then true is the only aregument returned,
+	otherwise it wil return full arguments from originalFn.
 ]]
 
 local HookManager = {}
 createLogger('HookManager', HookManager)
+
+local HOOK_TYPE_1 = 'Pre'
+local HOOK_TYPE_2 = 'Post'
 
 local zo_hooks = {
 	['ZO_PreHook'] = ZO_PreHook,
@@ -236,7 +234,7 @@ local function getOrCreateHookId(objectTable, existingFunctionName)
 			hookId = string.format('%s["%s"]', objectName, existingFunctionName)
 		else
 			objectName = objectTable.GetName and objectTable:GetName() or tostring(objectTable)
-			hookId = string.format('%s_<>Handler<>_%s"]', objectName, existingFunctionName)
+			hookId = string.format('("%s")%s', existingFunctionName, objectName)
 		end
 		if objectName == '' then return false end
 		
@@ -247,7 +245,6 @@ local function getOrCreateHookId(objectTable, existingFunctionName)
 	return hookId
 end
 
---
 local function getUpdatedParameters(objectTable, existingFunctionName, hookFunction)
 	if type(objectTable) == "string" then
 		hookFunction = existingFunctionName
@@ -259,18 +256,26 @@ local function getUpdatedParameters(objectTable, existingFunctionName, hookFunct
 	return objectTable, existingFunctionName, hookFunction, hookId
 end
 
+local function getHookTable(objectTable, existingFunctionName, suffix)
+	return objectTable[existingFunctionName .. suffix]
+end
+
 -- the functions that will cycle through the registered pre and post hooks
 local function getCustomHookFunction(hookType, objectTable, existingFunctionName, hookId)
-	if hookType == 'Pre' then
+	local function dbug(hookId, ...)
+		if hookId:match('DebugLogViewer') or hookId:match('RETICLE') then return end
+		HookManager:Debug(...)
+	end
+
+	if hookType == HOOK_TYPE_1 then
 		return function(...)
-			if not hookId:match('DebugLogViewer') then
-				HookManager:Debug('Run PreHooks for %s', hookId)
-			end
+			local hookfunctions = getHookTable(objectTable, existingFunctionName, '_PreHookFunctions')
+			if hookfunctions == nil then return false end
+			dbug(hookId, 'Run PreHooks for %s', hookId)
+			
 			local bypass = false
-			for registeredName, hookFunction in pairs(objectTable[existingFunctionName .. '_PreHookFunctions']) do
-			if not hookId:match('DebugLogViewer') then
-				HookManager:Debug('-- Registered by %s', registeredName)
-			end
+			for registeredName, hookFunction in pairs(hookfunctions) do
+				dbug(hookId, '-- Registered by %s', registeredName)
 				if hookFunction(...) then
 					bypass = true
 				end
@@ -281,23 +286,25 @@ local function getCustomHookFunction(hookType, objectTable, existingFunctionName
 	end
 	
 	return function(...)
-			if not hookId:match('DebugLogViewer') then
-				HookManager:Debug('Run PostHooks for %s', hookId)
-			end
-		for registeredName, hookFunction in pairs(objectTable[existingFunctionName .. '_PostHookFunctions']) do
-			if not hookId:match('DebugLogViewer') then
-				HookManager:Debug('-- Registered by %s', registeredName)
-			end
+		local hookfunctions = getHookTable(objectTable, existingFunctionName, '_PostHookFunctions')
+		if hookfunctions == nil then return end
+		dbug(hookId, 'Run PostHooks for %s', hookId)
+				
+		for registeredName, hookFunction in pairs(hookfunctions) do
+			dbug(hookId, '-- Registered by %s', registeredName)
+			
 			hookFunction(...)
 		end
 	end
 end
 
-local function sharedUnregister(hookType, registeredName, objectTable, existingFunctionName)
-	local suffix = '_' .. hookType .. 'hookFunctions'
+local function sharedUnregister(hookType, registeredName, objectTable, existingFunctionName, hookFunction, hookId)
+	local suffix = '_' .. hookType .. 'HookFunctions'
 	local hookFunctions = objectTable[existingFunctionName .. suffix]
+	HookManager:Info('Unregister: %s registeredName = %s, %s', hookType, registeredName, hookId)
 	
 	if hookFunctions then
+	HookManager:Debug('', fmt(hookFunctions))
 		if hookFunctions[registeredName] then
 			hookFunctions[registeredName] = nil
 			
@@ -307,107 +314,84 @@ local function sharedUnregister(hookType, registeredName, objectTable, existingF
 			objectTable[existingFunctionName .. suffix] = hookFunctions
 		end
 	end
-
-	return objectTable[existingFunctionName .. '_Original']
 end
 
 local count = 0
 local function register_Hook(hookType, registeredName, objectTable, existingFunctionName, hookFunction, hookId)
+	-- count is for debug purposes
 	count = count + 1
 	JO_HOOK_MANAGER.count = count
 	
-	if not objectTable[existingFunctionName .. '_Original'] then
-		-- Store the original function for later use.
-		objectTable[existingFunctionName .. '_Original'] = objectTable[existingFunctionName]
-	end
-
-	HookManager:Info('local function register_Hook: registeredName = %s, %s', registeredName, hookId)
+	HookManager:Info('Register %sHook: registeredName = %s, %s', hookType, registeredName, hookId)
 	local suffix = '_' .. hookType .. 'HookFunctions'
 	
 	local hookFunctions = objectTable[existingFunctionName .. suffix]
 	if not hookFunctions then
-		-- If this function has not yet been hooked, lets create a hook using a customHookFunction that will cycle through registered hooks.
 		hookFunctions = {}
 		local customHookFunction = getCustomHookFunction(hookType, objectTable, existingFunctionName, hookId)
 		zo_hooks['ZO_' .. hookType .. 'Hook'](objectTable, existingFunctionName, customHookFunction)
 	end
 
 	hookFunctions[registeredName] = hookFunction
-	-- Store the registered hook Functions.
 	objectTable[existingFunctionName .. suffix] = hookFunctions
-
-	return objectTable[existingFunctionName .. '_Original']
 end
 
 local function register_Handler(hookType, registeredName, control, handlerName, hookFunction)
 	count = count + 1
 	JO_HOOK_MANAGER.count = count
 	
-	if not control[handlerName .. '_Original'] then
-		control[handlerName .. '_Original'] = control:GetHandler(handlerName)
-	end
-
 	local hookId = getOrCreateHookId(control, handlerName)
-	HookManager:Info('local function register_Handler: registeredName = %s, %s', registeredName, hookId)
+	HookManager:Info('Register %sHookHandler: registeredName = %s, %s', hookType, registeredName, hookId)
 	local suffix = '_' .. hookType .. 'HookFunctions'
 	
 	local hookFunctions = control[handlerName .. suffix]
 	if not hookFunctions then
-		-- If this function has not yet been hooked, lets create a hook using a customHookFunction that will cycle through registered hooks.
 		hookFunctions = {}
 		local customHookFunction = getCustomHookFunction(hookType, control, handlerName, hookId)
 		zo_hooks['ZO_' .. hookType .. 'HookHandler'](control, handlerName, customHookFunction)
 	end
 
 	hookFunctions[registeredName] = hookFunction
-	-- Store the registered hook Functions.
 	control[handlerName .. suffix] = hookFunctions
-
-	return control[handlerName .. '_Original']
 end
 
 do -- Pre-hooks
-	local hookType = 'Pre'
 	function HookManager:RegisterForPreHook(registeredName, ...)
-		return register_Hook(hookType, registeredName, getUpdatedParameters(...))
+		return register_Hook(HOOK_TYPE_1, registeredName, getUpdatedParameters(...))
 	end
 
 	function HookManager:UnregisterForPreHook(registeredName, ...)
-		return sharedUnregister(hookType, registeredName, getUpdatedParameters(...))
+		return sharedUnregister(HOOK_TYPE_1, registeredName, getUpdatedParameters(...))
 	end
 
 	function HookManager:RegisterForPreHookHandler(registeredName, control, handlerName, hookFunction)
-		return register_Handler(hookType, registeredName, control, handlerName, hookFunction)
+		return register_Handler(HOOK_TYPE_1, registeredName, control, handlerName, hookFunction)
 	end
 
 	function HookManager:UnregisterForPreHookHandler(registeredName, control, handlerName)
-		return sharedUnregister(hookType, registeredName, control, handlerName)
+		return sharedUnregister(HOOK_TYPE_1, registeredName, control, handlerName)
 	end
 end
 
 do -- Post-hooks
-	local hookType = 'Post'
 	function HookManager:RegisterForPostHook(registeredName, ...)
-		return register_Hook(hookType, registeredName, getUpdatedParameters(...))
+		return register_Hook(HOOK_TYPE_2, registeredName, getUpdatedParameters(...))
 	end
 
 	function HookManager:UnregisterForPostHook(registeredName, ...)
-		return sharedUnregister(hookType, registeredName, getUpdatedParameters(...))
+		return sharedUnregister(HOOK_TYPE_2, registeredName, getUpdatedParameters(...))
 	end
 
 	function HookManager:RegisterForPostHookHandler(registeredName, objectTable, handlerName, hookFunction)
-		return register_Handler(hookType, registeredName, objectTable, handlerName, hookFunction)
+		return register_Handler(HOOK_TYPE_2, registeredName, objectTable, handlerName, hookFunction)
 	end
 
 	function HookManager:UnregisterForPostHookHandler(registeredName, control, handlerName)
-		return sharedUnregister(hookType, registeredName, control, handlerName)
+		return sharedUnregister(HOOK_TYPE_2, registeredName, control, handlerName)
 	end
-	
 end
 
-JO_HOOK_MANAGER = HookManager
-
-do
+do -- Backwards compatibility
 	local lastIndex = {}
 	local function getNextId(calledBy)
 		local index = lastIndex[calledBy] or 0
@@ -416,25 +400,23 @@ do
 	end
 	
 	ZO_PreHook = function(...)
-		return register_Hook('Pre', getNextId('ZO_PreHook'), getUpdatedParameters(...))
+		return register_Hook(HOOK_TYPE_1, getNextId('ZO_PreHook'), getUpdatedParameters(...))
 	end
 	ZO_PostHook = function(...)
-		return register_Hook('Post', getNextId('ZO_PostHook'), getUpdatedParameters(...))
+		return register_Hook(HOOK_TYPE_2, getNextId('ZO_PostHook'), getUpdatedParameters(...))
 	end
 	
 	ZO_PreHookHandler = function(...)
-		return register_Handler('Pre', getNextId('ZO_PreHookHandler'), ...)
+		return register_Handler(HOOK_TYPE_1, getNextId('ZO_PreHookHandler'), ...)
 	end
 	ZO_PostHookHandler = function(...)
-		return register_Handler('Post', getNextId('ZO_PostHookHandler'), ...)
+		return register_Handler(HOOK_TYPE_2, getNextId('ZO_PostHookHandler'), ...)
 	end
 end
 
---[[
-/script d(JO_HOOK_MANAGER.registeredHooks)
--- Example: change ZO_PostHook( to JO_PostHook:Register(addon.name,
+JO_HOOK_MANAGER = HookManager
 
-/script d(JO_HOOK_MANAGER:GetRegisteredHooks())
+--[[
 add status returns for  un/registering?
 HOOK_MANAGER:RegisterForPreHook(addon.name .. '_HookTest', 'SomeFunction', function(self)
 	return doThis()
@@ -481,6 +463,9 @@ end
 ]]
 
 do
+	local logger = {}
+	createLogger('TableIterator', logger)
+	
     -- this version will iterate any number index, including decimals and below 1. (example[-∞] to example[∞])
 	-- including tables where indices are not consecutive. 1,2,4,7
 	-- if there are non numeric indexes in table, they will be skipped without preventing table iterations. -- not currently true
@@ -588,55 +573,59 @@ end
 	JO_CallLaterOnScene(addon.name .. '_test', 'hud', function() end)
 	JO_CallLaterOnNextScene(addon.name .. '_test', function() end)
 ]]
-
-jo_callLater = function(id, func, ms)
-	if ms == nil then ms = 0 end
-    local name = "JO_CallLater_".. id
-	EVENT_MANAGER:UnregisterForUpdate(name)
+do	
+	local logger = {}
+	createLogger('CallLater', logger)
 	
-    EVENT_MANAGER:RegisterForUpdate(name, ms,
-        function()
-            EVENT_MANAGER:UnregisterForUpdate(name)
-            func(id)
-        end)
-    return id
-end
-
-jo_callLaterOnScene = function(id, sceneName, func)
-	if not sceneName or type(sceneName) ~= 'string' then return end
-	
-	local updateName = "JO_CallLaterOnScene_" .. id
-    EVENT_MANAGER:UnregisterForUpdate(updateName)
-	
-	local function OnUpdateHandler()
-		if SCENE_MANAGER:GetCurrentSceneName() == sceneName then
-			EVENT_MANAGER:UnregisterForUpdate(updateName)
-			func()
-		end
+	jo_callLater = function(id, func, ms)
+		if ms == nil then ms = 0 end
+		local name = "JO_CallLater_".. id
+		EVENT_MANAGER:UnregisterForUpdate(name)
+		
+		EVENT_MANAGER:RegisterForUpdate(name, ms,
+			function()
+				EVENT_MANAGER:UnregisterForUpdate(name)
+				func(id)
+			end)
+		return id
 	end
-	
-	EVENT_MANAGER:RegisterForUpdate(updateName, 100, OnUpdateHandler)
-end
 
-jo_callLaterOnNextScene = function(id, func)
-	local sceneName = SCENE_MANAGER:GetCurrentSceneName()
-	local updateName = "JO_CallLaterOnNextScene_" .. id
-    EVENT_MANAGER:UnregisterForUpdate(updateName)
-	
-	local function OnUpdateHandler()
-		if SCENE_MANAGER:GetCurrentSceneName() ~= sceneName then
-			EVENT_MANAGER:UnregisterForUpdate(updateName)
-			func()
+	jo_callLaterOnScene = function(id, sceneName, func)
+		if not sceneName or type(sceneName) ~= 'string' then return end
+		
+		local updateName = "JO_CallLaterOnScene_" .. id
+		EVENT_MANAGER:UnregisterForUpdate(updateName)
+		
+		local function OnUpdateHandler()
+			if SCENE_MANAGER:GetCurrentSceneName() == sceneName then
+				EVENT_MANAGER:UnregisterForUpdate(updateName)
+				func()
+			end
 		end
+		
+		EVENT_MANAGER:RegisterForUpdate(updateName, 100, OnUpdateHandler)
 	end
-	
-	EVENT_MANAGER:RegisterForUpdate(updateName, 100, OnUpdateHandler)
+
+	jo_callLaterOnNextScene = function(id, func)
+		local sceneName = SCENE_MANAGER:GetCurrentSceneName()
+		local updateName = "JO_CallLaterOnNextScene_" .. id
+		EVENT_MANAGER:UnregisterForUpdate(updateName)
+		
+		local function OnUpdateHandler()
+			if SCENE_MANAGER:GetCurrentSceneName() ~= sceneName then
+				EVENT_MANAGER:UnregisterForUpdate(updateName)
+				func()
+			end
+		end
+		
+		EVENT_MANAGER:RegisterForUpdate(updateName, 100, OnUpdateHandler)
+	end
 end
 
 ---------------------------------------------------------------------------------------------------------------
 -- JO_UpdateBuffer
 ---------------------------------------------------------------------------------------------------------------
---[[ About JO_UpdateBuffer_New:
+--[[ About JO_UpdateBuffe:
 	Useful when multiple triggers can fire the function but only want it to fire on the final call.
 		for an example of it being used, see: "IsJusta Gamepad UI Visibility Helper" in dynamicChat.lua
 	
@@ -673,24 +662,29 @@ function UpdateBuffer:Initialize(id, func, enabled)
 	self:Info('UpdateBuffer:Initialize: updateName = %s', self.updateName)
 	
 	self.enabled = enabled or true
+	self.delay = 100
 	
 	self.CallbackFn = func
 end
 
 function UpdateBuffer:OnUpdate(...)
 	local params = {...}
-	self:Debug('UpdateBuffer:OnUpdate: updateName = %s', self.updateName, fmt(params))
-	
 	EVENT_MANAGER:UnregisterForUpdate(self.updateName)
 	
+	self:Debug('UpdateBuffer:OnUpdate: %s', self.updateName)
 	local function OnUpdateHandler()
+		self:Debug('-- Fire: %s', self.updateName, fmt(params))
 		EVENT_MANAGER:UnregisterForUpdate(self.updateName)
 		self:CallbackFn(unpack(params))
 	end
 	
 	if self.enabled then
-		EVENT_MANAGER:RegisterForUpdate(self.updateName, 100, OnUpdateHandler)
+		EVENT_MANAGER:RegisterForUpdate(self.updateName, self.delay, OnUpdateHandler)
 	end
+end
+
+function UpdateBuffer:SetDelay(delay)
+	self.delay = delay
 end
 
 function UpdateBuffer:SetEnabled(enabled)
@@ -719,112 +713,91 @@ end
 ---------------------------------------------------------------------------------------------------------------
 -- Modifications to allow disabling interactions
 ---------------------------------------------------------------------------------------------------------------
-local fishingActions = {
-	[GetString(SI_GAMECAMERAACTIONTYPE16)] = true, -- "Fish"
---	[GetString(SI_GAMECAMERAACTIONTYPE17)] = true, -- "Reel In"
-}
-
-local function notFishingAction()
-	local action = GetGameCameraInteractableActionInfo()
-	return not fishingActions[action]
-end
-
 local lib_reticle = RETICLE
---createLogger('lib_reticle', lib_reticle)
 local lib_fishing_manager = FISHING_MANAGER
 local lib_fishing_gamepad = FISHING_GAMEPAD
 local lib_fishing_keyboard = FISHING_KEYBOARD
 
-
---[[
-	using RETICLE.interactionBlocked this way will not allow fishing to be blocked if desiered.
-	consider
-	RETICLE.interactionDisabled
-
-
-]]
--- RETICLE:GetInteractPromptVisible and FISHING_MANAGER:StartInteraction are used to disable interactions.
--- set RETICLE.interactionBlocked = true to disable
-function lib_reticle:GetInteractPromptVisible()
-	-- disables interaction in gamepad mode and allows jumping
-	-- the aftion must not be for fishing. interactionBlocked == true before bait is selected
-	--if self.interactionBlocked and notFishingAction() then
-	if self.interactionDisabled then
-		return false
-	end
-	return not self.interact:IsHidden()
-end
-
-function lib_fishing_manager:StartInteraction()
---	lib_reticle:Debug('FISHING_MANAGER: RETICLE.interactionBlocked = %s', lib_reticle.interactionBlocked)
-	--if lib_reticle.interactionBlocked and notFishingAction() then
-	if lib_reticle.interactionDisabled then
-		-- disables interaction in keyboard mode
-		-- returning true here will prevent GameCameraInteractStart() form firing
-		return true
-	end
+do
+	local logger = {}
+	createLogger('Disable_Interaction', logger)
 	
-	self.gamepad = IsInGamepadPreferredMode()
-	if self.gamepad then
-		return lib_fishing_gamepad:StartInteraction()
-	else
-		return lib_fishing_keyboard:StartInteraction()
+	-- RETICLE:GetInteractPromptVisible and FISHING_MANAGER:StartInteraction are used to disable interactions.
+	-- set RETICLE.interactionDisabled = true to disable
+	function lib_reticle:GetInteractPromptVisible()
+		-- disables interaction in gamepad mode and allows jumping
+		if self.interactionDisabled then
+			return false
+		end
+		return not self.interact:IsHidden()
 	end
-end
 
--- Experimental: can register fiter functions used for diabeling interactions, intead of custom hook functions.
--- Is currently in use by "IsJusta Disable Actions While Moving". May be in > 1.4.2
----------------------------------------------------------------------------------------------------------------
-lib_reticle.actionFilters = {}
-function lib_reticle:SetInteractionBlocked(blocked)
-	self.interactionBlocked = blocked
-end
-
-function lib_reticle:SetInteractionDisabled(disabled)
-	self.interactionDisabled = disabled
-end
-
--- comparator, filter, ??
-function lib_reticle:RegisterActionBlockedFilter(registerdName, action, filter)
-	if not self.actionFilters[action] then self.actionFilters[action] = {} end
-	self.actionFilters[action][registerdName] = filter
-	return filter
-end
-
-function lib_reticle:UnregisterActionBlockedFilter(registerdName, action)
-	if self.actionFilters[action] and self.actionFilters[action][registerdName] then
-		self.actionFilters[action][registerdName] = nil
-	end
-end
-
-function lib_reticle:GetActionBlockedFunctions(action)
-	return self.actionFilters[action]
-end
-
-function lib_reticle:IsInteractionBlocked(currentFrameTimeSeconds)
-	local action, interactableName = GetGameCameraInteractableActionInfo()
---	lib_reticle:Debug('action = %s, interactableName = %s, self.interactionBlocked = %s', action, interactableName, self.interactionBlocked)
-	if action == nil then return self.interactionBlocked end
-	local actionFilters = self:GetActionBlockedFunctions(action)
-	
-	if actionFilters then
-		for registeredName, actionFilter in pairs(actionFilters) do
-	--		local Returns = actionFilter(action, interactableName, interactionPossible, currentFrameTimeSeconds)
-	--		lib_reticle:Debug('actionFilter: registeredName = %s, actionFilter Returns = %s', registeredName, Returns)
-			if actionFilter(action, interactableName, currentFrameTimeSeconds) then
-				return true
-			end
+	function lib_fishing_manager:StartInteraction()
+		logger:Debug('function StartInteraction: RETICLE.interactionDisabled = %s', lib_reticle.interactionDisabled)
+		if lib_reticle.interactionDisabled then
+			-- disables interaction in keyboard mode
+			-- returning true here will prevent GameCameraInteractStart() form firing
+			return true
+		end
+		
+		self.gamepad = IsInGamepadPreferredMode()
+		if self.gamepad then
+			return lib_fishing_gamepad:StartInteraction()
+		else
+			return lib_fishing_keyboard:StartInteraction()
 		end
 	end
-	return false
+
+	-- Experimental: can register fiter functions used for diabeling interactions, intead of custom hook functions.
+	-- Is currently in use by "IsJusta Disable Actions While Moving". May be in > 1.4.2
+	---------------------------------------------------------------------------------------------------------------
+	lib_reticle.actionFilters = {}
+
+	function lib_reticle:SetInteractionDisabled(disabled)
+		self.interactionDisabled = disabled
+	end
+
+	-- comparator, filter, ??
+	function lib_reticle:RegisterActionDisabledFilter(registerdName, action, filter)
+		if not self.actionFilters[action] then self.actionFilters[action] = {} end
+		self.actionFilters[action][registerdName] = filter
+		return filter
+	end
+
+	function lib_reticle:UnregisterActionDisabledFilter(registerdName, action)
+		if self.actionFilters[action] and self.actionFilters[action][registerdName] then
+			self.actionFilters[action][registerdName] = nil
+		end
+	end
+
+	function lib_reticle:GetActionBlockedFunctions(action)
+		return self.actionFilters[action]
+	end
+
+	function lib_reticle:IsInteractionDisabled(currentFrameTimeSeconds)
+		local action, interactableName = GetGameCameraInteractableActionInfo()
+		logger:Debug('function IsInteractionDisabled: action = %s, interactableName = %s, interactionBlocked = %s, interactionDisabled = %s', action, interactableName, self.interactionBlocked, self.interactionDisabled)
+		if action == nil then return self.interactionDisabled end
+		local actionFilters = self:GetActionBlockedFunctions(action)
+		
+		if actionFilters then
+			for registeredName, actionFilter in pairs(actionFilters) do
+				logger:Debug('-- actionFilter: registeredName = %s, actionFilter Returns = %s', registeredName, actionFilter(action, interactableName, currentFrameTimeSeconds))
+				if actionFilter(action, interactableName, currentFrameTimeSeconds) then
+					return true
+				end
+			end
+		end
+		return false
+	end
+
+	JO_HOOK_MANAGER:RegisterForPostHook(lib.name, lib_reticle, "TryHandlingInteraction", function(self, interactionPossible, currentFrameTimeSeconds)
+		if not interactionPossible then return end
+		self.interactionDisabled = self:IsInteractionDisabled(currentFrameTimeSeconds)
+	--	logger:Debug('self.interactionBlocked = %s', self.interactionBlocked)
+	end)
+
 end
-
-JO_HOOK_MANAGER:RegisterForPostHook(lib.name, lib_reticle, "TryHandlingInteraction", function(self, interactionPossible, currentFrameTimeSeconds)
-	if not interactionPossible then return end
-	self.interactionDisabled = self:IsInteractionBlocked(currentFrameTimeSeconds)
---	lib_reticle:Debug('self.interactionBlocked = %s', self.interactionBlocked)
-end)
-
 --[[ Example usage.
 
 	local actionsTable = {
@@ -833,9 +806,9 @@ end)
 	}
 
 	for actionName in pairs(actionsTable) do
-		RETICLE:RegisterActionBlockedFilter(addon.name, actionName, function(action, interactableName, currentFrameTimeSeconds)
-			if disabledInteractions(action, interactableName) then -- this funciton checks if the current action or name is enabled to be disabled
-				if isActionDisabled(action, interactableName, currentFrameTimeSeconds) then -- here we check if it should currently be disabled.
+		RETICLE:RegisterActionDisabledFilter(addon.name, actionName, function(action, interactableName, currentFrameTimeSeconds)
+			if disabledInteractions(action, interactableName) then
+				if isActionDisabled(action, interactableName, currentFrameTimeSeconds) then
 					playFromStart()
 					return true
 				else
