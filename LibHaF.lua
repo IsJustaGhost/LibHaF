@@ -168,54 +168,48 @@ end
 		JO_HOOK_MANAGER:RegisterForPreHook('AddonName', RETICLE, 'TryHandlingInteraction', function() d('') end)
 		JO_HOOK_MANAGER:RegisterForPreHook('AddonName', RETICLE, 'TryHandlingInteraction', function() d('') end, 'LibHaF', CONTROL_HANDLER_ORDER_BEFORE)
 
+	
+	An object is created the first time a function is hooked. This object handles adding and removing hook functions.
+	local Hook_Object = RETICLE['TryHandlingInteraction_JO_Hook']
 
-	The hookId is used to identify the hook as a string. Mainly used for debug.
-		hookId = objectTable[existingFunctionName] as string 'FISHING_MANAGER["StartInteraction"]'
+	Registered hook functions are stored within the Hook_Object based on what method the hook was created for.
+	Hook_Object.hookTables.PreHook = {}
+	Hook_Object.hookTables.PostHook = {}
+	Hook_Object.hookTables.PreHookHandler = {}
+	Hook_Object.hookTables.PostHookHandler = {}
+	Hook_Object.hookTables.SecurePostHook = {}
 	
-	All original functions, posthooks, prehooks, hookIds are appended to the objectTable to be used later.
-	
-	objectTable[existingFunctionName .. '_Original'] = originalFunciton
-	objectTable[existingFunctionName .. '_PrehookFunctions'] = {["name_given_at_register"] = hookFunciton}
-	objectTable[existingFunctionName .. '_PosthookFunctions'] = {["name_given_at_register"] = hookFunciton}
-	hookIds are appended as objectTable["registeredHooks"] {[existingFunctionName] = hookId}
-	
-	examples:
-		RETICLE.OnUpdate_Original = originalFunciton
-		RETICLE.OnUpdate_PrehookFunctions = {["name_given_at_register"] = hookFunciton}
-		RETICLE.OnUpdate_PosthookFunctions = {["name_given_at_register"] = hookFunciton}
-		RETICLE.OnUpdate = modifiedHookFunction
-		
-		RETICLE.TryHandlingInteraction_Original = originalFunciton
-		RETICLE.TryHandlingInteraction_PrehookFunctions = {["name_given_at_register"] = hookFunciton}
-		RETICLE.TryHandlingInteraction_PosthookFunctions = {["name_given_at_register"] = hookFunciton}
-		RETICLE.TryHandlingInteraction = modifiedHookFunction
-		
-		RETICLE.registeredHooks = {
-			[OnUpdate] = 'RETICLE["OnUpdate"]',
-			[TryHandlingInteraction] = 'RETICLE["TryHandlingInteraction"]',
-		}
-	
-	For functions that are nested the hookId will be '_Not_Found_[existingFunctionName]'
-	There would need to be a traceback to figure out the full 'path' of the objectTable and I am not sure how to do this.
-	Take 'SMITHING_GAMEPAD.deconstructionPanel.inventory' as an example.
-	If a registered prehook returns true, then true is the only aregument returned,
-	otherwise it wil return full arguments from originalFn.
+	The first time a hook functions is added for a method, the hook will be created using the 
+	corresponding ZO original hook method with an internally created hook function.
+	ZO_PreHook(RETICLE, 'TryHandlingInteraction', internalHookFunction)
+	The internalHookFunction will handle running registered hooks.
 ]]
 
 local HookManager = {}
 createLogger('HookManager', HookManager)
 
-local HOOK_TYPE_1 = 'Pre'
-local HOOK_TYPE_2 = 'Post'
+local JO_Hook = '_JO_Hook'
+
+local HOOK_TYPE_1 = 'PreHook'
+local HOOK_TYPE_2 = 'PostHook'
+local HOOK_TYPE_3 = 'PreHookHandler'
+local HOOK_TYPE_4 = 'PostHookHandler'
+local HOOK_TYPE_5 = 'SecurePostHook'
 
 local count = 0
 local lastHookIdIndex = {}
 
+local isPreHook = {
+	['PreHook'] = true,
+	['PreHookHandler'] = true,
+}
+
 local zo_hooks = {
-	['ZO_PreHook'] = ZO_PreHook,
-	['ZO_PostHook'] = ZO_PostHook,
-	['ZO_PreHookHandler'] = ZO_PreHookHandler,
-	['ZO_PostHookHandler'] = ZO_PostHookHandler,
+	['PreHook'] = ZO_PreHook,
+	['PostHook'] = ZO_PostHook,
+	['PreHookHandler'] = ZO_PreHookHandler,
+	['PostHookHandler'] = ZO_PostHookHandler,
+	['SecurePostHook'] = SecurePostHook,
 }
 
 local function getObjectName(objectTable)
@@ -258,67 +252,16 @@ local function getOrCreateHookId(objectTable, existingFunctionName)
 	return hookId
 end
 
-local function getUpdatedParameters(objectTable, existingFunctionName, hookFunction, dependent, sortOrder)
-	if type(objectTable) == "string" then
-		sortOrder = dependent
-		dependent = hookFunction
-		hookFunction = existingFunctionName
-		existingFunctionName = objectTable
-		objectTable = _G
-	end
+local function doHookFunctionsMatch(oldHook, newHook)
+	if not newHook then return false end
 	
-	sortOrder = sortOrder or 0
-	
-	local hookId = getOrCreateHookId(objectTable, existingFunctionName)
-	return objectTable, existingFunctionName, hookFunction, hookId, dependent, sortOrder
-end
-
-local function getHookTable(objectTable, existingFunctionName, suffix)
-	return objectTable[existingFunctionName .. suffix]
-end
-
--- the functions that will cycle through the registered pre and post hooks
-local function getCustomHookFunction(hookType, objectTable, existingFunctionName, hookId)
-	local function dbug(hookId, ...)
-		-- reduce logger spam
-		if hookId:match('DebugLogViewer') or hookId:match('RETICLE') then return end
-		HookManager:Debug(...)
-	end
-
-	if hookType == HOOK_TYPE_1 then
-		return function(...)
-			local hookTable = getHookTable(objectTable, existingFunctionName, '_PreHookFunctions')
-			if hookTable == nil then return false end
-			dbug(hookId, 'Run PreHooks for %s', hookId)
-			
-			local bypass = false
-			for k, entry in ipairs(hookTable) do
-				dbug(hookId, '-- Registered by %s', entry.name)
-				if entry.hookFunction(...) then
-					bypass = true
-				end
-			end
-			
-			return bypass
-		end
-	end
-	
-	return function(...)
-		local hookTable = getHookTable(objectTable, existingFunctionName, '_PostHookFunctions')
-		if hookTable == nil then return end
-		dbug(hookId, 'Run PostHooks for %s', hookId)
-				
-		for k, entry in ipairs(hookTable) do
-			dbug(hookId, '-- Registered by %s', registeredName)
-			
-			entry.hookFunction(...)
-		end
-	end
+	return oldHook == newHook
 end
 
 local function hookComparator(entry, registeredName, newHook)
-	local pass = newHook and tostring(entry.hookFunction) == newHook or false
-	return entry.name == registeredName or pass
+--	return (entry.name == registeredName and entry.name ==  hookType) or pass
+	return entry.name == registeredName or
+		doHookFunctionsMatch(entry.hookFunction, newHook)
 end
 
 local function getExistingHook(registeredName, hookTable, newHook)
@@ -329,7 +272,7 @@ local function getExistingHook(registeredName, hookTable, newHook)
 	end
 end
 
-local function getDependentIndex(registeredName, hookTable, sortOrder)
+local function getDependentIndex(hookTable, registeredName, sortOrder)
 	local index = getExistingHook(registeredName, hookTable)
 	
 	if index then
@@ -337,114 +280,189 @@ local function getDependentIndex(registeredName, hookTable, sortOrder)
 	end
 end
 
-local function removeHook(registeredName, hookTable, hookFunction)
-	local index, oldName = getExistingHook(registeredName, hookTable, tostring(hookFunction))
+local function getNextId(calledBy, hookTable, hookFunction)
+	local index = (lastHookIdIndex[calledBy] or 0) + 1
+	local nextId = 'Default_' .. calledBy .. '_' .. index
+	local _, oldName = getExistingHook(nextId, hookTable, tostring(hookFunction))
 	
-	if index then
-		count = count - 1
-		JO_HOOK_MANAGER.count = count
-		
-		HookManager:Info('-- Hook removed for: %s', registeredName)
-		table.remove(hookTable, index)
-		
-		if registeredName ~= oldName then
-			registeredName = oldName
+	if oldName then
+		if nextId ~= oldName then
+			nextId = oldName
+		end
+	else
+		lastHookIdIndex[calledBy] = index
+	end
+	return nextId
+end
+
+local function getUpdatedParameters(objectTable, existingFunctionName, hookFunction, dependent, sortOrder)
+	if type(objectTable) == "string" then
+		sortOrder = dependent
+		dependent = hookFunction
+		hookFunction = existingFunctionName
+		existingFunctionName = objectTable
+		objectTable = _G
+	end
+	
+	sortOrder = sortOrder or 0
+	return objectTable, existingFunctionName, hookFunction, dependent, sortOrder
+end
+
+-- the functions that will cycle through the registered pre and post hooks
+local function getInternalHookFunction(hookObject, hookType)
+	local function dbug(hookId, ...)
+		-- reduce logger spam
+		if hookId:match('DebugLogViewer') or hookId:match('RETICLE') then return end
+	--	if hookId:match('DebugLogViewer') then return end
+		HookManager:Debug(...)
+	end
+
+	if isPreHook[hookType] then
+		return function(...)
+			local hookTable = hookObject:GetHookTable(hookType)
+			if #hookTable == 0 then return false end
+			local bypass = false
+			for k, entry in ipairs(hookTable) do
+				dbug(entry.hookId, '-- Run  %s, Registered by %s, %s', entry.hookType, entry.name, entry.hookId)
+				if entry.hookFunction(...) then
+					bypass = true
+				end
+			end
+			
+			return bypass
+		end
+	end
+	
+	return function(...)
+		local hookTable = hookObject:GetHookTable(hookType)
+		if #hookTable == 0 then return end
+		for k, entry in ipairs(hookTable) do
+			dbug(entry.hookId, '-- Run %s, Registered by %s, %s', entry.hookType, entry.name, entry.hookId)
+			entry.hookFunction(...)
 		end
 	end
 end
 
-local function addHook(registeredName, hookFunction, hookTable, dependent, sortOrder)
-	-- remove existing hook if exists
-	removeHook(registeredName, hookTable, hookFunction)
+---------------------------------------------------------------------------------------------------------------
+-- HookObject
+---------------------------------------------------------------------------------------------------------------
+local HookObject = ZO_InitializingObject:Subclass()
+
+function HookObject:Initialize(hookType, objectTable, existingFunctionName)
+	self.owner = objectTable -- owner = objectTable or control
+	self.method = existingFunctionName -- method = existingFunctionName or handlerName
+	
+	self.hookId = getOrCreateHookId(objectTable, existingFunctionName)
+	
+	self.hookTables = {}
+end
+
+function HookObject:CreateEntry(hookType, registeredName, hookFunction, dependent, sortOrder)
+	local hookTable = self:GetHookTable(hookType)
+	local entry = {
+		['hookType'] = hookType,
+		['hookId'] = getOrCreateHookId(self.owner, self.method),
+		['name'] = registeredName,
+		['hookFunction'] = hookFunction,
+	}
+	
 	local index = #hookTable + 1
 	
 	if index > 1 and dependent and sortOrder > CONTROL_HANDLER_ORDER_NONE then
 		index = getDependentIndex(hookTable, dependent, sortOrder) or index
 	end
 	
-	local entry = {
-		['name'] = registeredName,
-		['hookFunction'] = hookFunction,
-	}
+	return entry, index
+end
+
+function HookObject:GetInitializingFuncitons(hookType)
+	return zo_hooks[hookType], getInternalHookFunction(self, hookType)
+end
+
+function HookObject:CreateHook(hookType)
+	local createHook, internalHookFunction = self:GetInitializingFuncitons(hookType)
+	createHook(self.owner, self.method, internalHookFunction)
+end
+
+function HookObject:Add(hookType, registeredName, hookFunction, dependent, sortOrder)
+	local hookTable = self:GetHookTable(hookType)
+	if #hookTable == 0 then
+		-- If a hook of current type has not been created yet, create it now.
+		self:CreateHook(hookType)
+	end
+
+	if registeredName == nil then
+		registeredName = getNextId(hookType, hookTable, hookFunction)
+	end
+	
+	-- remove existing hook if exists
+	self:Remove(hookType, registeredName, hookFunction)
+	local entry, index = self:CreateEntry(hookType, registeredName, hookFunction, dependent, sortOrder)
 	
 	table.insert(hookTable, index, entry)
+--	self:Finalize(hookType, hookTable)
+	
+	HookManager:Info('-- Hook Added for %s, %s', registeredName, self.hookId)
 	
 	-- count is for debug purposes
 	count = count + 1
 	JO_HOOK_MANAGER.count = count
 end
 
-local function getNextId(calledBy, hookTable, hookFunction)
-	local index = lastHookIdIndex[calledBy] or 0
-	index = index + 1
-	local registeredName = calledBy .. '_' .. index
-	local _, oldName = getExistingHook(registeredName, hookTable, tostring(hookFunction))
+function HookObject:Remove(hookType, registeredName, hookFunction)
+	local hookTable = self:GetHookTable(hookType)
 	
-	if oldName and registeredName ~= oldName then
-		registeredName = oldName
-	else
-		lastHookIdIndex[calledBy] = index
-	end
-	return registeredName
-end
-
-local function sharedUnregister(hookType, registeredName, objectTable, existingFunctionName, hookFunction, hookId)
-	local suffix = '_' .. hookType .. 'HookFunctions'
-	local hookTable = objectTable[existingFunctionName .. suffix]
-	HookManager:Info('Unregister: %s registeredName = %s, %s', hookType, registeredName, hookId)
-	
-	if hookTable then
-		HookManager:Debug('', fmt(hookTable))
-		removeHook(hookTable, registeredName)
+	local index, oldName = getExistingHook(registeredName, hookTable, tostring(hookFunction))
+	if index then
+		count = count - 1
+		table.remove(hookTable, index)
 		
-		if NonContiguousCount(hookTable) == 0 then
-			hookTable = nil
+	--	self:Finalize(hookType, hookTable)
+		return true
+	end
+end
+
+function HookObject:GetHookTable(hookType)
+	if not self.hookTables[hookType] then
+		self.hookTables[hookType] = {}
+	end
+	
+	return self.hookTables[hookType]
+end
+
+function HookObject:Finalize(hookType, hookTable)
+	self.hookTables[hookType] = hookTable
+end
+
+---------------------------------------------------------------------------------------------------------------
+-- HookManager
+---------------------------------------------------------------------------------------------------------------
+local function sharedRegister(hookType, registeredName, objectTable, existingFunctionName, hookFunction, dependent, sortOrder)
+	HookManager:Info('Register %s', hookType)
+	local Hook_Object = objectTable[existingFunctionName .. JO_Hook]
+	if not Hook_Object then
+		Hook_Object = HookObject:New(hookType, objectTable, existingFunctionName)
+		objectTable[existingFunctionName .. JO_Hook] = Hook_Object
+	end
+	
+	Hook_Object:Add(hookType, registeredName, hookFunction, dependent, sortOrder)
+end
+
+local function sharedUnregister(hookType, registeredName, objectTable, existingFunctionName, hookFunction)
+	HookManager:Info('Unregister %s', hookType)
+	local Hook_Object = objectTable[existingFunctionName .. JO_Hook]
+	
+	if Hook_Object then
+		if Hook_Object:Remove(hookType, registeredName, hookFunction) then
+			HookManager:Info('-- Hook Removed for %s, %s', registeredName, Hook_Object.hookId)
 		end
-		objectTable[existingFunctionName .. suffix] = hookTable
 	end
-end
-
-local function register_Hook(hookType, registeredName, objectTable, existingFunctionName, hookFunction, hookId, dependent, sortOrder)
-	local suffix = '_' .. hookType .. 'HookFunctions'
-	
-	local hookTable = objectTable[existingFunctionName .. suffix]
-	if not hookTable then
-		hookTable = {}
-		local customHookFunction = getCustomHookFunction(hookType, objectTable, existingFunctionName, hookId)
-		zo_hooks['ZO_' .. hookType .. 'Hook'](objectTable, existingFunctionName, customHookFunction)
-	end
-	if registeredName == nil then
-		registeredName = getNextId('ZO_' .. hookType .. 'Hook', hookTable, hookFunction)
-	end
-	
-	addHook(registeredName, hookFunction, hookTable, dependent, sortOrder)
-	objectTable[existingFunctionName .. suffix] = hookTable
-	HookManager:Info('Register %sHook: registeredName = %s, %s', hookType, registeredName, hookId)
-end
-
-local function register_Handler(hookType, registeredName, control, handlerName, hookFunction, dependent, sortOrder)
-	local hookId = getOrCreateHookId(control, handlerName)
-	local suffix = '_' .. hookType .. 'HookFunctions'
-	
-	local hookTable = control[handlerName .. suffix]
-	if not hookTable then
-		hookTable = {}
-		local customHookFunction = getCustomHookFunction(hookType, control, handlerName, hookId)
-		zo_hooks['ZO_' .. hookType .. 'HookHandler'](control, handlerName, customHookFunction)
-	end
-	if registeredName == nil then
-		registeredName = getNextId('ZO_' .. hookType .. 'HookHandler', hookTable, hookFunction)
-	end
-
-	addHook(registeredName, hookFunction, hookTable, dependent, sortOrder)
-	control[handlerName .. suffix] = hookTable
-	HookManager:Info('Register %sHookHandler: registeredName = %s, %s', hookType, registeredName, hookId)
 end
 
 -- where ... == objectTable, existingFunctionName, hookFunction, dependent, sortOrder
 do -- Pre-hooks
 	function HookManager:RegisterForPreHook(registeredName, ...)
-		return register_Hook(HOOK_TYPE_1, registeredName, getUpdatedParameters(...))
+		return sharedRegister(HOOK_TYPE_1, registeredName, getUpdatedParameters(...))
 	end
 
 	function HookManager:UnregisterForPreHook(registeredName, ...)
@@ -452,77 +470,77 @@ do -- Pre-hooks
 	end
 
 	function HookManager:RegisterForPreHookHandler(registeredName, control, handlerName, hookFunction, dependent, sortOrder)
-		return register_Handler(HOOK_TYPE_1, registeredName, control, handlerName, hookFunction)
+		return sharedRegister(HOOK_TYPE_3, registeredName, control, handlerName, hookFunction)
 	end
 
 	function HookManager:UnregisterForPreHookHandler(registeredName, control, handlerName)
-		return sharedUnregister(HOOK_TYPE_1, registeredName, control, handlerName)
+		return sharedUnregister(HOOK_TYPE_3, registeredName, control, handlerName)
 	end
 end
 
 do -- Post-hooks
 	function HookManager:RegisterForPostHook(registeredName, ...)
-		return register_Hook(HOOK_TYPE_2, registeredName, getUpdatedParameters(...))
+		return sharedRegister(HOOK_TYPE_2, registeredName, getUpdatedParameters(...))
 	end
 
 	function HookManager:UnregisterForPostHook(registeredName, ...)
 		return sharedUnregister(HOOK_TYPE_2, registeredName, getUpdatedParameters(...))
 	end
 
-	function HookManager:RegisterForPostHookHandler(registeredName, objectTable, handlerName, hookFunction, dependent, sortOrder)
-		return register_Handler(HOOK_TYPE_2, registeredName, objectTable, handlerName, hookFunction)
+	function HookManager:RegisterForPostHookHandler(registeredName, control, handlerName, hookFunction, dependent, sortOrder)
+		return sharedRegister(HOOK_TYPE_4, registeredName, control, handlerName, hookFunction)
 	end
 
 	function HookManager:UnregisterForPostHookHandler(registeredName, control, handlerName)
-		return sharedUnregister(HOOK_TYPE_2, registeredName, control, handlerName)
+		return sharedUnregister(HOOK_TYPE_4, registeredName, control, handlerName)
 	end
 end
 
 do -- Backwards compatibility
-	local lastIndex = {}
-	local function getNextId(calledBy)
-		local index = lastIndex[calledBy] or 0
-		lastIndex[calledBy] = index + 1
-		return (calledBy .. '_' .. lastIndex[calledBy])
-	end
-	
+	-- We'll determine registeredName later
 	ZO_PreHook = function(...)
-		return register_Hook(HOOK_TYPE_1, nil, getUpdatedParameters(...))
+		return sharedRegister(HOOK_TYPE_1, nil, getUpdatedParameters(...))
 	end
 	ZO_PostHook = function(...)
-		return register_Hook(HOOK_TYPE_2, nil, getUpdatedParameters(...))
+		return sharedRegister(HOOK_TYPE_2, nil, getUpdatedParameters(...))
 	end
 	
 	ZO_PreHookHandler = function(...)
-		return register_Handler(HOOK_TYPE_1, nil, ...)
+		return sharedRegister(HOOK_TYPE_3, nil, ...)
 	end
 	ZO_PostHookHandler = function(...)
-		return register_Handler(HOOK_TYPE_2, nil, ...)
+		return sharedRegister(HOOK_TYPE_4, nil, ...)
+	end
+	
+	SecurePostHook = function(...)
+		return sharedRegister(HOOK_TYPE_5, nil, getUpdatedParameters(...))
 	end
 end
 
-function HookManager:GetRegisteredHooks(objectTable, existingFunctionName)
-	local registeredHooks
-	
-	for k, hookType in pairs({'Pre', 'Post'}) do
-		local suffix = '_' .. hookType .. 'HookFunctions'
-		local hookTable = objectTable[existingFunctionName .. suffix]
-		
-		if hookTable then
-			registeredHooks = registeredHooks or {}
-			registeredHooks[hookType .. 'Hooks'] = hookTable
-		end
-	end
-	
-	return registeredHooks
-end
-	
 JO_HOOK_MANAGER = HookManager
 
 --[[
-	local registeredHooks = JO_HOOK_MANAGER:GetRegisteredHooks(RETICLE, 'TryHandlingInteraction').PreHooks
-	if registeredHooks and hookFunctions[name] then
+/script d(JO_HOOK_MANAGER.count)
+/script JO_HOOK_MANAGER:RegisterForPreHook('AddonName', RETICLE, 'TryHandlingInteraction', function() d('') end, 'LibHaF', CONTROL_HANDLER_ORDER_BEFORE)
+/script JO_HOOK_MANAGER:RegisterForPostHook('AddonName', RETICLE, 'TryHandlingInteraction', function() d('') end, 'LibHaF', CONTROL_HANDLER_ORDER_BEFORE)
+/script JO_HOOK_MANAGER:RegisterForPostHook('AddonName2', RETICLE, 'TryHandlingInteraction', function() d('') end, 'AddonName', CONTROL_HANDLER_ORDER_AFTER)
+
+
+function HookManager:UnregisterAll(objectTable, existingFunctionName, hookType, nameMatch)
+	if not type(objectTable) == 'userData' then
+		objectTable, existingFunctionName = getUpdatedParameters(objectTable, existingFunctionName)
+	end
 	
+	if not objectTable and existingFunctionName then return end
+	
+	sharedUnregisterAll(objectTable, existingFunctionName, hookType, nameMatch)
+end
+
+JO_HOOK_MANAGER:UnregisterAll(RETICLE, 'TryHandlingInteraction')
+JO_HOOK_MANAGER:UnregisterAll(RETICLE, 'TryHandlingInteraction', 'Pre', 'ZO_PreHook')
+
+
+	local registeredHooks = JO_HOOK_MANAGER:GetRegisteredHooks(RETICLE, 'TryHandlingInteraction').PreHooks
 	
 add status returns for  un/registering?
 HOOK_MANAGER:RegisterForPreHook(self.name, RETICLE, 'OnUpdate', function(self)
