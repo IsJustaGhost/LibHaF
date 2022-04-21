@@ -282,7 +282,7 @@ function HookObject:Remove(hookType, registeredName, hookFunction)
 		return true
 	end
 end
-
+--[[
 function HookObject:GetHookTable(hookType)
 	if not self.hookTables[hookType] then
 		self.hookTables[hookType] = {}
@@ -290,7 +290,14 @@ function HookObject:GetHookTable(hookType)
 	
 	return self.hookTables[hookType]
 end
+]]
+function HookObject:GetHookTable()
+	return self.hookTable
+end
 
+local function getHookIndex(hookType, existingFunctionName)
+	return existingFunctionName .. "_JO_" .. hookType
+end
 ---------------------------------------------------------------------------------------------------------------
 -- HookManager
 ---------------------------------------------------------------------------------------------------------------
@@ -333,10 +340,11 @@ local function sharedRegister(hookType, registeredName, objectTable, existingFun
 	local invalid = validateParamaters(hookType, hookId, registeredName, objectTable, existingFunctionName, hookFunction, true)
 	if invalid then return false end
 	
-	local Hook_Object = objectTable[existingFunctionName .. JO_Hook]
+	local hookIndex = getHookIndex(hookType, existingFunctionName)
+	local Hook_Object = objectTable[hookIndex]
 	if not Hook_Object then
 		Hook_Object = HookObject:New(hookType, hookId, objectTable, existingFunctionName)
-		objectTable[existingFunctionName .. JO_Hook] = Hook_Object
+		objectTable[hookIndex] = Hook_Object
 	end
 	
 	return Hook_Object:Add(hookType, registeredName, hookFunction, dependent, sortOrder)
@@ -348,7 +356,8 @@ local function sharedUnregister(hookType, registeredName, objectTable, existingF
 	if invalid then return false end
 	--HookManager:Info('Unregister %s', hookType)
 	
-	local Hook_Object = objectTable[existingFunctionName .. JO_Hook]
+	local hookIndex = getHookIndex(hookType, existingFunctionName)
+	local Hook_Object = objectTable[hookIndex]
 	
 	if Hook_Object then
 		if Hook_Object:Remove(hookType, registeredName, hookFunction) then
