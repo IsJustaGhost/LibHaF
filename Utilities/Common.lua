@@ -1,39 +1,13 @@
-Currently adding the following to, for my addons that may use functinos from the lib, english string file.
+local Lib = LibJoCommon
+local createLogger = function(className, classObject, levelOverride) Lib.CreateLogger(Lib, className, classObject, levelOverride) end
 
 ---------------------------------------------------------------------------------------------------------------
--- Experimental
+-- ZO_FilteredNumericallyIndexedTableIterator
 ---------------------------------------------------------------------------------------------------------------
---[[ About LibHaF:
-	LibHaF is an experimental library which I am not ready to release. This file will allow me to use the modifications
-	on this version of this addon I release without having to release LibHaF. This will allow me to test LibHaF more thoroughly
-	and make changes without having to update this addon every time.
-]]
-
-if IJA_LibHaFInitialize then return end
-IJA_LibHaFInitialize = true
-
-if not LibHaF then
-	local isFish = GetString(SI_GAMECAMERAACTIONTYPE16)
-	
-	local original_StartInteraction = FISHING_MANAGER.StartInteraction
-	function FISHING_MANAGER:StartInteraction()
-		if RETICLE.interactionBlocked and select(1, GetGameCameraInteractableActionInfo()) ~= isFish then
-			return true
-		end
-		
-		return original_StartInteraction(self)
-	end
-
-	local original_GetInteractPromptVisible = RETICLE.GetInteractPromptVisible
-	function RETICLE:GetInteractPromptVisible()
-		if RETICLE.interactionBlocked and select(1, GetGameCameraInteractableActionInfo()) ~= isFish then
-			return false
-		end
-		return original_GetInteractPromptVisible(self)
-	end
-end
-
 do
+	local logger = {}
+	createLogger('TableIterator', logger)
+	
     -- this version will iterate any number index, including decimals and below 1. (example[-∞] to example[∞])
 	-- including tables where indices are not consecutive. 1,2,4,7
 	-- if there are non numeric indexes in table, they will be skipped without preventing table iterations. -- not currently true
@@ -90,18 +64,6 @@ do
 	end
 end
 
-local HookManager = {}
-function HookManager:RegisterForPreHook(name, ...)
-	return ZO_PreHook(...)
-end 
-function HookManager:RegisterForPostHook(name, ...)
-	return ZO_PostHook(...)
-end 
-function HookManager:UnregisterForPrehook()
-	return false 
-end
-function HookManager:UnregisterForPosthook()
-	return false 
-end
-
-if not JO_HOOK_MANAGER then JO_HOOK_MANAGER = HookManager end
+---------------------------------------------------------------------------------------------------------------
+-- 
+---------------------------------------------------------------------------------------------------------------

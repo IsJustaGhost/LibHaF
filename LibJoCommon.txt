@@ -1,12 +1,11 @@
-## Title: LibHaF
+## Title: LibJoCommon
 ## Description: .
 ## Author: IsJustGhost
-## APIVersion: 101033 101034
+## APIVersion: 100034
 ## Version: 0.1
 ## AddOnVersion: 000001
 ## IsLibrary: true
-## DependsOn: LibDebugLogger>=180
-
+## OptionalDependsOn: LibDebugLogger>=180
 
 # The creation and use of Add-ons are subject to the Add-on Terms of Use,
 # available at https://account.elderscrollsonline.com/add-on-terms. 
@@ -15,4 +14,12 @@
 # The Elder Scrolls® and related logos are registered trademarks or trademarks of ZeniMax Media Inc.
 # in the United States and/or other countries. All rights reserved.
 
-LibHaF.lua
+LibJoCommon.lua
+Utilities\ObjectBase.lua
+Utilities\HookManager.lua
+Utilities\Common.lua
+Utilities\CallLater.lua
+Utilities\DisableInteractions.lua
+Utilities\UpdateBuffer.lua
+Bindings.xml
+Utilities\Kebinds.lua
