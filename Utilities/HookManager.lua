@@ -72,6 +72,10 @@ local zo_hooks = {
 	['SecurePostHook'] = SecurePostHook,
 }
 
+local function getHookIndex(hookType, existingFunctionName)
+	return existingFunctionName .. "_JO_" .. hookType
+end
+
 local function getObjectName(objectTable)
 	local tableId = tostring(objectTable)
 	if type(objectTable) ~= 'table' then return false end -- '_Not_A_Object_'
@@ -265,7 +269,7 @@ function HookObject:Add(hookType, registeredName, hookFunction, dependent, sortO
 	
 	table.insert(hookTable, index, entry)
 	
-	--HookManager:Info('-- Hook Added for %s, %s', registeredName, self.hookId)
+	HookManager:Info('-- Hook Added for %s, %s', registeredName, self.hookId)
 	
 	-- count is for debug purposes
 	count = count + 1
@@ -292,12 +296,13 @@ function HookObject:GetHookTable(hookType)
 end
 ]]
 function HookObject:GetHookTable()
+	if not self.hookTable then
+		self.hookTable = {}
+	end
+	
 	return self.hookTable
 end
 
-local function getHookIndex(hookType, existingFunctionName)
-	return existingFunctionName .. "_JO_" .. hookType
-end
 ---------------------------------------------------------------------------------------------------------------
 -- HookManager
 ---------------------------------------------------------------------------------------------------------------
@@ -334,7 +339,7 @@ local function validateParamaters(hookType, hookId, registeredName, objectTable,
 end
 
 local function sharedRegister(hookType, registeredName, objectTable, existingFunctionName, hookFunction, dependent, sortOrder)
-	--HookManager:Info('Register %s', hookType)
+	HookManager:Info('Register %s', hookType)
 	
 	local hookId = getHookId(objectTable, existingFunctionName)
 	local invalid = validateParamaters(hookType, hookId, registeredName, objectTable, existingFunctionName, hookFunction, true)
@@ -354,14 +359,14 @@ local function sharedUnregister(hookType, registeredName, objectTable, existingF
 	local hookId = getHookId(objectTable, existingFunctionName)
 	local invalid = validateParamaters(hookType, hookId, registeredName, objectTable, existingFunctionName, hookFunction)
 	if invalid then return false end
-	--HookManager:Info('Unregister %s', hookType)
+	HookManager:Info('Unregister %s', hookType)
 	
 	local hookIndex = getHookIndex(hookType, existingFunctionName)
 	local Hook_Object = objectTable[hookIndex]
 	
 	if Hook_Object then
 		if Hook_Object:Remove(hookType, registeredName, hookFunction) then
-			--HookManager:Info('-- Hook Removed for %s, %s', registeredName, Hook_Object.hookId)
+			HookManager:Info('-- Hook Removed for %s, %s', registeredName, Hook_Object.hookId)
 		end
 	end
 end
