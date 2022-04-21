@@ -321,7 +321,7 @@ local function validateParamaters(hookType, hookId, registeredName, objectTable,
 	
 	if invalid then
 		local functionName = (type(existingFunctionName) == 'string' and existingFunctionName) or 'Unknown'
-		HookManager:Error('Error %s hook, Hook type = %s, Function name = %s, for %s, Requires arguments:\n%s', (register and 'Registering' or 'Unregistering'), hookType, functionName, hookId, resultString)
+		HookManager:Error('Error %s hook, Hook type = %s, Function name = %s, for %s, by %s, Requires arguments:\n%s', (register and 'Registering' or 'Unregistering'), hookType, functionName, hookId, registeredName, resultString)
 	end
 	return invalid
 end
