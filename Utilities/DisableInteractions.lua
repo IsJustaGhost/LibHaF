@@ -72,6 +72,8 @@ end
 
 -- Experimental: can register filter functions used for disabling interactions, instead of custom hook functions.
 -- Is currently in use by "IsJusta Disable Actions While Moving". May be in version > 1.4.2
+-- This doesn't seem to be working properly with multiple filteres registered for same action. 
+-- This may be due to TryHandlingInteraction fireing to quickly in sucsession.
 ---------------------------------------------------------------------------------------------------------------
 lib_reticle.actionFilters = {}
 
